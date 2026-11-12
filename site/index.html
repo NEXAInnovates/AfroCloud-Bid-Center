@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b33">
+  <title>BidOps Studio · AfroCloud Technologies</title>
+  <link rel="stylesheet" href="assets/app.css">
+  <script src="assets/app.js" defer></script>
+</head>
+<body>
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-visual">
+      <a class="brand brand-light" href="#" aria-label="AfroCloud BidOps Studio">
+        <img class="brand-logo" src="assets/afrocloud-logo.png" alt="AfroCloud Technologies — Learn Achieve Advance">
+      </a>
+      <div class="login-copy">
+        <span class="eyebrow">THE OPPORTUNITY-TO-IMPACT PLATFORM</span>
+        <h1>From a signal<br>to a stronger<br><em>delivery story.</em></h1>
+        <p>One calm command centre for opportunity decisions, proposal quality, interview readiness and project launch.</p>
+        <div class="login-foot"><span class="pulse"></span> PRIVATE WORKSPACE · SECURE SIGN-IN</div>
+      </div>
+      <div class="login-orbit orbit-one"></div><div class="login-orbit orbit-two"></div>
+    </div>
+    <div class="login-form-wrap">
+      <form id="loginForm" class="login-form">
+        <span class="eyebrow">AFROCLOUD TECHNOLOGIES</span>
+        <h2>Welcome back</h2>
+        <label for="username">Account email</label>
+        <input id="username" name="username" type="email" autocomplete="username" required maxlength="190">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="72">
+        <button class="button button-primary button-wide" type="submit">Sign in <span aria-hidden="true">→</span></button>
+        <button class="button button-wide preview-entry" id="previewButton" type="button" hidden>Preview workspace <span aria-hidden="true">↗</span></button>
+        <div id="loginError" class="form-error" role="alert"></div>
+      </form>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <a class="brand" href="#" data-nav="dashboard">
+          <span class="brand-wordmark">AfroCloud</span>
+          <span><b>BIDOPS</b><small>STUDIO</small></span>
+        </a>
+        <button class="icon-button mobile-close" data-action="close-menu" aria-label="Close menu">×</button>
+      </div>
+      <div class="workspace-label">WORKSPACE <span class="workspace-dot"></span></div>
+      <nav class="side-nav" aria-label="Main navigation">
+        <button class="nav-item active" data-nav="dashboard"><span class="nav-icon">◫</span>Executive brief</button>
+        <button class="nav-item" data-nav="opportunities"><span class="nav-icon">⌕</span>Opportunity radar <span id="navOppCount" class="nav-count">0</span></button>
+        <button class="nav-item" data-nav="pipeline"><span class="nav-icon">▤</span>Bid pipeline</button>
+        <button class="nav-item" data-nav="reports"><span class="nav-icon">▧</span>Portfolio report</button>
+        <button class="nav-item" data-nav="proposal"><span class="nav-icon">✳</span>Proposal studio</button>
+        <button class="nav-item" data-nav="interview"><span class="nav-icon">◉</span>Interview room</button>
+        <button class="nav-item" data-nav="delivery"><span class="nav-icon">↗</span>Project launch</button>
+        <button class="nav-item" data-nav="profile"><span class="nav-icon">⌂</span>Company evidence</button>
+        <button class="nav-item" data-nav="team" id="teamNav" hidden><span class="nav-icon">♙</span>Team access</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="help-card"><span class="help-spark">✦</span><b>Win with evidence.</b><p>Every strong bid starts with a clear fit and proof the team can stand behind.</p></div>
+        <div class="account-row"><div class="avatar" id="userAvatar">A</div><div class="account-name"><b id="userName">AfroCloud team</b><small id="userRole">Workspace member</small></div><button class="icon-button" data-action="logout" aria-label="Sign out">↗</button></div>
+      </div>
+    </aside>
+    <div id="scrim" class="scrim" data-action="close-menu"></div>
+    <main class="main-shell">
+      <header class="topbar">
+        <div class="topbar-left"><button class="icon-button menu-button" data-action="open-menu" aria-label="Open menu">☰</button><div class="breadcrumbs">AFROCLOUD <span>/</span> <b id="crumb">Executive brief</b></div></div>
+        <div class="topbar-right"><span class="secure-status"><i></i> PRIVATE WORKSPACE</span><span id="today" class="today"></span><button class="button button-primary button-small" data-action="new-opportunity">＋ Capture opportunity</button></div>
+      </header>
+      <div class="content">
+        <section id="view-dashboard" class="view active"></section>
+        <section id="view-opportunities" class="view"></section>
+        <section id="view-pipeline" class="view"></section>
+        <section id="view-reports" class="view"></section>
+        <section id="view-proposal" class="view"></section>
+        <section id="view-interview" class="view"></section>
+        <section id="view-delivery" class="view"></section>
+        <section id="view-profile" class="view"></section>
+        <section id="view-team" class="view"></section>
+        <footer class="footer"><span>AFROCLOUD BIDOPS STUDIO</span><span>Private by design · Your team controls the evidence</span></footer>
+      </div>
+    </main>
+  </div>
+  <div id="modal" class="modal-backdrop" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="icon-button modal-close" data-action="close-modal" aria-label="Close dialog">×</button>
+      <div id="modalContent"></div>
+    </section>
+  </div>
+</body>
+</html>
