@@ -81,6 +81,8 @@
   var sourceDirectory = [
     { tag: "FREE SEARCH", name: "Google Search", domain: "google.com", url: "https://www.google.com/", access: "Free", kind: "Search engine", relevance: "Best flexible discovery tool. Searches official procurement sites, PDFs, donor portals and cached notice pages.", caution: "Search results are not a validated tender feed; confirm current status on the buyer portal." },
     { tag: "FREE SEARCH", name: "Bing Search", domain: "bing.com", url: "https://www.bing.com/", access: "Free", kind: "Search engine", relevance: "A useful second index for procurement pages, framework notices and document attachments.", caution: "Search results may be stale or duplicated; verify each notice at source." },
+    { tag: "AUTOMATED · FREE API", name: "TED public procurement notices", domain: "ted.europa.eu", url: "https://ted.europa.eu/en/", access: "Daily API scan enabled · no search key", kind: "Official procurement", relevance: "Published European public procurement notices are checked daily for learning, digital, cloud, cybersecurity and programme-delivery fit.", caution: "TED primarily covers European notices; confirm geographic eligibility and the buyer's original notice." },
+    { tag: "AUTOMATED · FREE FEED", name: "UK Find a Tender", domain: "find-tender.service.gov.uk", url: "https://www.find-tender.service.gov.uk/Search", access: "Daily OCDS feed scan enabled · no search key", kind: "Official procurement", relevance: "UK public tender releases are checked daily against AfroCloud capability terms.", caution: "UK notices may be restricted to UK suppliers or require local delivery; verify eligibility before bidding." },
     { tag: "OFFICIAL · UN", name: "UN Global Marketplace (UNGM)", domain: "ungm.org", url: "https://www.ungm.org/Public/Notice", access: "Free search · vendor requirements vary", kind: "Official procurement", relevance: "UN agency RFPs, RFQs, EOIs, consultancy and partner calls. Filter by opportunity type and beneficiary country.", caution: "Register the legal entity and verify each agency's eligibility and vendor requirements." },
     { tag: "OFFICIAL · UN", name: "UNDP Procurement Notices", domain: "procurement-notices.undp.org", url: "https://procurement-notices.undp.org/", access: "Free", kind: "Official procurement", relevance: "Search active UNDP RFP/RFQ notices by country and document title; service and consulting categories often suit knowledge work.", caution: "Screen out goods, works and individual-contractor posts that do not fit a company bid." },
     { tag: "OFFICIAL · MDB", name: "World Bank Project Procurement", domain: "projects.worldbank.org", url: "https://projects.worldbank.org/en/projects-operations/procurement", access: "Free · email alerts", kind: "Official procurement", relevance: "Current opportunities and alerts for World Bank-financed borrower projects; filter for consulting, education, digital, ICT and training services.", caution: "Many notices are issued by borrower agencies; follow the linked country procurement documents." },
@@ -533,12 +535,13 @@
     }).join("") : emptyState("No automated signals yet", previewMode
       ? "The interactive preview does not run live source searches."
       : state.latestDiscovery && state.latestDiscovery.status === "completed"
-        ? "The latest daily scan found no eligible new notices."
-        : "Daily AI discovery will appear here after the scheduled scan is configured and completed.", '<button class="button button-small" data-nav="opportunities">Review sources</button>');
+        ? "The latest public-source scan found no matching new notices."
+        : "Daily public-source opportunities will appear here after the scheduled scan completes.", '<button class="button button-small" data-nav="opportunities">Review sources</button>');
     var discoveryStatus = state.latestDiscovery
       ? "Last scan " + new Date(state.latestDiscovery.started_at).toLocaleString() + " · " +
-        (state.latestDiscovery.status === "completed" ? Number(state.latestDiscovery.added_count || 0) + " added" : state.latestDiscovery.status)
-      : "Daily source scan not run yet";
+        (state.latestDiscovery.status === "completed" ? Number(state.latestDiscovery.added_count || 0) + " added" : state.latestDiscovery.status) +
+        (state.latestDiscovery.error_message ? " · source warning" : "")
+      : "Daily public-source scan not run yet";
     var topAction = state.user && (state.user.role === "owner" || state.user.role === "manager")
       ? '<button class="button button-primary" data-action="new-opportunity">＋ Capture opportunity</button>' : "";
 
@@ -556,7 +559,7 @@
       state.opportunities.filter(function (item) { return item.stage === "Lost"; }).length + " lost · " + (s.winRate === null ? "awaiting outcomes" : "historical only") + "</div></article></div>" +
       '<article class="panel"><div class="panel-head"><div><h2 class="panel-title">Fresh opportunity signals</h2><p class="panel-sub">' +
       escapeHtml(discoveryStatus) + '</p></div><button class="text-link" data-nav="opportunities">All sources →</button></div><div class="panel-body"><div class="opportunity-list">' +
-      signalContent + '</div><p class="panel-sub">AI-screened leads are not verified eligibility decisions. Check the original notice before committing bid effort.</p></div></article>' +
+      signalContent + '</div><p class="panel-sub">Keyword-screened public notices are not verified eligibility decisions. Check the original notice before committing bid effort.</p></div></article>' +
       '<div class="dashboard-grid"><div class="column-stack">' +
       '<article class="panel"><div class="panel-head"><div><h2 class="panel-title">Decision room</h2><p class="panel-sub">The bids that need a clear Go / No-Go call</p></div><button class="text-link" data-nav="opportunities">View radar →</button></div><div class="opportunity-list">' +
       decisionContent + '</div></article>' +
@@ -606,7 +609,7 @@
       '<div class="keyword-list"><b>KEYWORDS INCLUDED</b>' + group.terms.map(function (term) {
         return '<span class="keyword-chip">' + escapeHtml(term) + "</span>";
       }).join("") + '</div><div class="callout source-query"><strong>Search recipe:</strong> ' + escapeHtml(group.label) + " + " + escapeHtml(market.label) +
-      ' + RFP / tender / procurement / EOI / consultancy. Poor-fit exclusions: civil/building works, vehicles, catering, office supplies, computer/tablet-only supply and printing. <b>When configured, a scheduled Claude web-search scan checks permitted source domains daily and AI screens candidates. It is not a Google API feed; search coverage can be incomplete, and every notice must be verified.</b></div>' +
+      ' + RFP / tender / procurement / EOI / consultancy. Poor-fit exclusions: civil/building works, vehicles, catering, office supplies, computer/tablet-only supply and printing. <b>The scheduled free-source scan checks the TED API and UK Find a Tender feed daily, matches notice text to AfroCloud capabilities, and saves candidates to this radar. It does not use AI or crawl all of Google; verify each notice and supplier-eligibility requirement.</b></div>' +
       '<div class="source-grid">' + cards + "</div>" +
       '<p class="source-footnote">Source coverage and free/paid access can change. Direct links are starting points, not endorsements. Always check the buyer’s original notice, deadline, legal-entity eligibility, registration and all mandatory criteria. UNjobs is mainly a jobs index; only institutional consultancy rosters suitable for company participation belong in the bid pipeline.</p>';
   }
@@ -628,7 +631,7 @@
     document.getElementById("view-opportunities").innerHTML =
       pageHead("FIND · QUALIFY · DECIDE", "Opportunity radar", "Capture real notices, screen capability fit and make an accountable go / no-go decision.",
         state.user && (state.user.role === "owner" || state.user.role === "manager") ? '<button class="button button-primary" data-action="new-opportunity">＋ Capture opportunity</button>' : "") +
-      '<div class="callout"><strong>Signal quality matters.</strong> Opportunities can be entered by your team or suggested by the scheduled AI search. AI screening is not an eligibility decision and does not guarantee complete or current coverage. Verify every notice and mandatory criterion with the buyer.</div>' +
+      '<div class="callout"><strong>Daily free-source discovery is on.</strong> The scheduled scan checks TED and UK Find a Tender, then saves capability-keyword matches here. Results are not eligibility decisions, coverage is not comprehensive, and some notices may exclude East African suppliers. Verify every notice and mandatory criterion with the buyer.</div>' +
       '<article class="panel"><div class="toolbar"><input id="oppSearch" class="field" placeholder="Search title, funder, requirements…" value="' + escapeHtml(state.search) +
       '"><select id="oppStage" class="select"><option value="">All stages</option>' + stageList.map(function (stage) {
         return '<option value="' + stage[0] + '"' + (state.stage === stage[0] ? " selected" : "") + ">" + escapeHtml(stage[1]) + "</option>";

@@ -469,7 +469,7 @@ async function handle(request) {
     const displayNames = new Map(auditUsers.map((item) => [item.user_id, item.display_name]));
     const activity = activityRows.map((item) => ({
       ...item,
-      display_name: displayNames.get(item.user_id) || (item.action === 'auto_discover' ? 'Daily AI discovery' : 'Workspace user'),
+      display_name: displayNames.get(item.user_id) || (item.action === 'auto_discover' ? 'Daily public-source discovery' : 'Workspace user'),
     }));
     const byProject = new Map(projectRows.map((project) => [project.id, []]));
     for (const milestone of milestones) byProject.get(milestone.project_id)?.push(milestone);
