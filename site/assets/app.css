@@ -12,6 +12,7 @@ a{color:inherit;text-decoration:none}
 .brand{display:inline-flex;align-items:center;gap:10px;color:inherit}
 .brand-wordmark{display:inline-flex;align-items:center;height:35px;padding:0 10px;border:1px solid rgba(19,185,154,.5);border-radius:8px;color:#27cbb0;font:800 13px/1 Manrope,sans-serif;letter-spacing:-.06em}
 .brand-logo{display:block;width:136px;height:92px;object-fit:contain;object-position:center;border-radius:8px;background:#fff}
+.sidebar-brand-logo{width:84px;height:40px;object-fit:cover;border-radius:5px}
 .brand b,.brand small{display:block;letter-spacing:.13em}
 .brand b{font:800 11px Manrope,sans-serif}
 .brand small{font-size:8px;opacity:.63;margin-top:3px}

@@ -13,6 +13,7 @@
     proposals: [],
     activity: [],
     users: [],
+    latestDiscovery: null,
     tab: "dashboard",
     search: "",
     stage: "",
@@ -98,8 +99,9 @@
     { tag: "LOW-COST / FREEMIUM", name: "DevelopmentAid Tenders", domain: "developmentaid.org", url: "https://www.developmentaid.org/tenders", access: "Limited free access · paid tiers", kind: "Aggregator", relevance: "Development-sector procurement and donor notices across countries; filter by education, ICT, training and consulting.", caution: "Check current free-tier limits, notice freshness and buyer-source link before paying or bidding." },
     { tag: "LOW-COST / FREEMIUM", name: "Devex Funding & Tenders", domain: "devex.com", url: "https://www.devex.com/", access: "Limited free content · paid products", kind: "Aggregator", relevance: "Development finance, donor-funded project intelligence and selected procurement leads.", caution: "The product mixes funding intelligence with jobs and other content; confirm this is a company procurement contract." },
     { tag: "LOW-COST / MIXED", name: "dgMarket", domain: "dgmarket.com", url: "https://www.dgmarket.com/", access: "Public listings · paid alert services may apply", kind: "Aggregator", relevance: "Multi-country procurement listings that can surface donor-funded consulting and ICT notices.", caution: "Coverage and alert tiers change; check duplication and confirm the issuing agency's original notice." },
-    { tag: "ADJACENT · NOT TENDERS", name: "UNjobs", domain: "unjobs.org", url: "https://unjobs.org/", access: "Free jobs index", kind: "Employment listings", relevance: "Useful for spotting individual consultancy and expert-role trends or potential staff leads.", caution: "Primarily a job/vacancy index, not an organizational RFP database. Do not count individual job applications as a company bid." },
-    { tag: "ADJACENT · NOT TENDERS", name: "ReliefWeb", domain: "reliefweb.int", url: "https://reliefweb.int/", access: "Free humanitarian information", kind: "Context / jobs", relevance: "Useful for development-sector context, country plans and humanitarian response signals.", caution: "Not a general company procurement database; job listings are not vendor contracts." },
+    { tag: "LOW-COST / MIXED", name: "TendersKenya", domain: "tenderskenya.co.ke", url: "https://tenderskenya.co.ke/", access: "Public listings · verify source notice", kind: "Aggregator", relevance: "A Kenya tender index that may surface digital, training and consulting notices for follow-up.", caution: "Confirm the current notice on the issuing buyer's official portal; listings can be incomplete or stale." },
+    { tag: "ADJACENT · NOT TENDERS", name: "UNjobs", domain: "unjobs.org", url: "https://unjobs.org/skills/e-learning", access: "Free jobs index", kind: "Employment listings", relevance: "Useful for spotting individual consultancy and expert-role trends or institutional roster calls.", caution: "Primarily a job/vacancy index, not an organizational RFP database. Individual job applications are not company bids." },
+    { tag: "OFFICIAL · HUMANITARIAN", name: "ReliefWeb Tender / RFP / EOI listings", domain: "reliefweb.int", url: "https://reliefweb.int/jobs?list=Tender%2FRFPs%2FEOIs%20Jobs&advanced-search=%28TY52695%29", access: "Free · API app name approval required for direct API access", kind: "Official humanitarian notices", relevance: "Humanitarian tender, RFP and EOI listings; the daily discovery scan searches this source alongside other permitted domains.", caution: "Verify the original notice, deadline and organization eligibility before bid work." },
   ];
 
   function escapeHtml(value) {
@@ -128,6 +130,25 @@
         proposals: clone(state.proposals),
         activity: clone(state.activity),
         users: clone(state.users),
+        latest_discovery: null,
+      };
+    }
+    if (route === "export") {
+      return {
+        ok: true,
+        format_version: 1,
+        exported_at: new Date().toISOString(),
+        workspace: "AfroCloud BidOps preview",
+        data: {
+          company_profile: clone(state.profile ? [state.profile] : []),
+          opportunities: clone(state.opportunities),
+          projects: clone(state.projects),
+          milestones: clone(state.projects.flatMap(function (project) { return project.milestones || []; })),
+          proposals: clone(state.proposals),
+          team: clone(state.users),
+          activity: clone(state.activity),
+          discovery_runs: [],
+        },
       };
     }
     if (route === "users" && method === "GET") return { ok: true, users: clone(state.users) };
@@ -498,6 +519,26 @@
         escapeHtml(item.funder) + " · " + escapeHtml(stageLabel(item.stage)) + "</div></div><div class=\"opp-right\"><span class=\"pill " +
         color + '">' + escapeHtml(label) + "</span><br>" + openOpportunityButton(item.id) + "</div></div>";
     }).join("") : emptyState("Nothing on the radar yet", "Capture an opportunity to start tracking deadlines, fit and the next decision.", '<button class="button button-primary button-small" data-action="new-opportunity">＋ Capture a tender</button>');
+    var freshSignals = state.opportunities.filter(function (item) {
+      return item.source_url && item.discovered_at;
+    }).sort(function (a, b) {
+      return String(b.discovered_at).localeCompare(String(a.discovered_at));
+    }).slice(0, 5);
+    var signalContent = freshSignals.length ? freshSignals.map(function (item) {
+      return '<div class="opp-row"><div><div class="opp-name">' + escapeHtml(item.title) +
+        '</div><div class="opp-meta">' + escapeHtml(item.source_name || item.funder) + ' · Discovered ' +
+        escapeHtml(new Date(item.discovered_at).toLocaleDateString()) + '</div>' + fitMarkup(item.fit_score) +
+        '</div><div class="opp-right"><a href="' + escapeHtml(item.source_url) +
+        '" target="_blank" rel="noopener noreferrer">Verify notice ↗</a><br>' + openOpportunityButton(item.id) + '</div></div>';
+    }).join("") : emptyState("No automated signals yet", previewMode
+      ? "The interactive preview does not run live source searches."
+      : state.latestDiscovery && state.latestDiscovery.status === "completed"
+        ? "The latest daily scan found no eligible new notices."
+        : "Daily AI discovery will appear here after the scheduled scan is configured and completed.", '<button class="button button-small" data-nav="opportunities">Review sources</button>');
+    var discoveryStatus = state.latestDiscovery
+      ? "Last scan " + new Date(state.latestDiscovery.started_at).toLocaleString() + " · " +
+        (state.latestDiscovery.status === "completed" ? Number(state.latestDiscovery.added_count || 0) + " added" : state.latestDiscovery.status)
+      : "Daily source scan not run yet";
     var topAction = state.user && (state.user.role === "owner" || state.user.role === "manager")
       ? '<button class="button button-primary" data-action="new-opportunity">＋ Capture opportunity</button>' : "";
 
@@ -513,6 +554,9 @@
       '<article class="stat-card dark"><div class="stat-top"><span>WIN RATE · DECIDED BIDS</span><span class="stat-icon">✳</span></div><div class="stat-value">' +
       (s.winRate === null ? "—" : s.winRate + "%") + '</div><div class="stat-foot">' + s.won.length + " won · " +
       state.opportunities.filter(function (item) { return item.stage === "Lost"; }).length + " lost · " + (s.winRate === null ? "awaiting outcomes" : "historical only") + "</div></article></div>" +
+      '<article class="panel"><div class="panel-head"><div><h2 class="panel-title">Fresh opportunity signals</h2><p class="panel-sub">' +
+      escapeHtml(discoveryStatus) + '</p></div><button class="text-link" data-nav="opportunities">All sources →</button></div><div class="panel-body"><div class="opportunity-list">' +
+      signalContent + '</div><p class="panel-sub">AI-screened leads are not verified eligibility decisions. Check the original notice before committing bid effort.</p></div></article>' +
       '<div class="dashboard-grid"><div class="column-stack">' +
       '<article class="panel"><div class="panel-head"><div><h2 class="panel-title">Decision room</h2><p class="panel-sub">The bids that need a clear Go / No-Go call</p></div><button class="text-link" data-nav="opportunities">View radar →</button></div><div class="opportunity-list">' +
       decisionContent + '</div></article>' +
@@ -562,9 +606,9 @@
       '<div class="keyword-list"><b>KEYWORDS INCLUDED</b>' + group.terms.map(function (term) {
         return '<span class="keyword-chip">' + escapeHtml(term) + "</span>";
       }).join("") + '</div><div class="callout source-query"><strong>Search recipe:</strong> ' + escapeHtml(group.label) + " + " + escapeHtml(market.label) +
-      ' + RFP / tender / procurement / EOI / consultancy. Poor-fit exclusions: civil/building works, vehicles, catering, office supplies, computer/tablet-only supply, printing and jobs. <b>These links launch external searches; no search, scraping, AI matching or notice verification happens inside BidOps.</b></div>' +
+      ' + RFP / tender / procurement / EOI / consultancy. Poor-fit exclusions: civil/building works, vehicles, catering, office supplies, computer/tablet-only supply and printing. <b>When configured, a scheduled Claude web-search scan checks permitted source domains daily and AI screens candidates. It is not a Google API feed; search coverage can be incomplete, and every notice must be verified.</b></div>' +
       '<div class="source-grid">' + cards + "</div>" +
-      '<p class="source-footnote">Source coverage and free/paid access can change. Direct links are starting points, not endorsements. Always check the buyer’s original notice, deadline, legal-entity eligibility, registration and all mandatory criteria. UNjobs and ReliefWeb are adjacent context/job sources, not company RFP databases.</p>';
+      '<p class="source-footnote">Source coverage and free/paid access can change. Direct links are starting points, not endorsements. Always check the buyer’s original notice, deadline, legal-entity eligibility, registration and all mandatory criteria. UNjobs is mainly a jobs index; only institutional consultancy rosters suitable for company participation belong in the bid pipeline.</p>';
   }
 
   function renderOpportunities() {
@@ -574,7 +618,8 @@
       var days = daysLeft(item.deadline);
       var deadlineTone = days !== null && days < 0 ? "red" : days !== null && days <= 5 ? "amber" : "";
       return "<tr><td><b>" + escapeHtml(item.title) + '</b><div class="opp-meta">' + escapeHtml(item.funder) + "</div></td><td>" +
-        escapeHtml(item.sector || "—") + "</td><td>" + (item.deadline ? '<span class="pill ' + deadlineTone + '">' + dateLabel(item.deadline) + "</span>" : "—") +
+        escapeHtml(item.sector || "—") + (item.source_url ? '<div class="opp-meta"><a href="' + escapeHtml(item.source_url) + '" target="_blank" rel="noopener noreferrer">' +
+          escapeHtml(item.source_name || "Source notice") + " ↗</a></div>" : "") + "</td><td>" + (item.deadline ? '<span class="pill ' + deadlineTone + '">' + dateLabel(item.deadline) + "</span>" : "—") +
         "</td><td>" + money(item.value, item.currency) + "</td><td>" + fitMarkup(item.fit_score) + "</td><td>" + stagePill(item.stage) +
         "</td><td>" + openOpportunityButton(item.id) + "</td></tr>";
     }).join("") : '<tr><td colspan="7">' + emptyState(state.opportunities.length ? "No matching opportunities" : "Start with a verified signal", state.opportunities.length ?
@@ -583,7 +628,7 @@
     document.getElementById("view-opportunities").innerHTML =
       pageHead("FIND · QUALIFY · DECIDE", "Opportunity radar", "Capture real notices, screen capability fit and make an accountable go / no-go decision.",
         state.user && (state.user.role === "owner" || state.user.role === "manager") ? '<button class="button button-primary" data-action="new-opportunity">＋ Capture opportunity</button>' : "") +
-      '<div class="callout"><strong>Signal quality matters.</strong> Opportunities are entered by your team; this system does not scrape or guarantee live tender notices. The fit score is a keyword screening signal only, never an eligibility decision. Verify every notice and mandatory criterion with the buyer.</div>' +
+      '<div class="callout"><strong>Signal quality matters.</strong> Opportunities can be entered by your team or suggested by the scheduled AI search. AI screening is not an eligibility decision and does not guarantee complete or current coverage. Verify every notice and mandatory criterion with the buyer.</div>' +
       '<article class="panel"><div class="toolbar"><input id="oppSearch" class="field" placeholder="Search title, funder, requirements…" value="' + escapeHtml(state.search) +
       '"><select id="oppStage" class="select"><option value="">All stages</option>' + stageList.map(function (stage) {
         return '<option value="' + stage[0] + '"' + (state.stage === stage[0] ? " selected" : "") + ">" + escapeHtml(stage[1]) + "</option>";
@@ -620,6 +665,7 @@
     var activity = (state.activity || []).length ? state.activity.map(function (item) {
       var labels = {
         opportunity: "Opportunity",
+        discovery: "Tender discovery",
         proposal: "Proposal",
         interview: "Interview preparation",
         project: "Project launch",
@@ -641,8 +687,10 @@
     }).join("") : '<tr><td colspan="5">' + emptyState("No portfolio records yet", "Report data is calculated from your real opportunities only.") + "</td></tr>";
     document.getElementById("view-reports").innerHTML =
       pageHead("PORTFOLIO · EVIDENCE · MOMENTUM", "Portfolio report", "A clean management snapshot of real bid records and the latest team updates.",
-        '<button class="button" data-action="export-csv">↓ Export CSV</button><button class="button button-primary" data-action="print-report">Print report</button>') +
-      '<div class="callout"><strong>Reporting note.</strong> Bid value is indicative and unweighted. Win rate uses only opportunities marked Won or Lost; it is descriptive, not a forward projection.</div>' +
+        '<button class="button" data-action="export-csv">↓ Export CSV</button>' +
+        (state.user && ["owner", "manager"].includes(state.user.role) ? '<button class="button" data-action="export-backup">↓ Download workspace backup</button>' : "") +
+        '<button class="button button-primary" data-action="print-report">Print report</button>') +
+      '<div class="callout"><strong>Reporting note.</strong> Bid value is indicative and unweighted. Win rate uses only opportunities marked Won or Lost; it is descriptive, not a forward projection. Live changes are saved in the shared Supabase workspace. Owners and managers can download a JSON backup for their device.</div>' +
       '<div class="stat-grid"><article class="stat-card"><div class="stat-top"><span>OPEN BID VALUE</span><span class="stat-icon">↗</span></div><div class="stat-value" style="font-size:18px">' +
       escapeHtml(s.value) + '</div><div class="stat-foot">' + s.open.length + " active opportunities · by currency</div></article>" +
       '<article class="stat-card"><div class="stat-top"><span>VALUE AWARDED</span><span class="stat-icon">✳</span></div><div class="stat-value" style="font-size:18px">' +
@@ -672,10 +720,14 @@
       pageHead("RESPOND · PROVE · REFINE", "Proposal studio", "A disciplined first draft — never a substitute for the buyer's exact RFP or verified evidence.",
         '<button class="button" data-action="download-proposal"' + (sections.length ? "" : " disabled") + ">↓ Export text</button>" +
         '<button class="button button-primary" data-action="save-proposal"' + (sections.length ? "" : " disabled") + ">Save draft</button>") +
-      '<div class="callout"><strong>Truth-before-polish.</strong> This studio creates an evidence-led proposal outline, not an AI-generated “winning” guarantee. Replace every bracketed prompt, map mandatory criteria to proof, validate all costs and have a human bid lead approve the final submission.</div>' +
+      '<div class="callout"><strong>Truth-before-polish.</strong> ' + (previewMode
+        ? "The interactive preview uses a built-in outline. In the live workspace, Claude drafts from the captured notice and company evidence; it does not guarantee awards."
+        : "Claude drafts a tailored proposal from the captured notice and company evidence; it does not guarantee awards.") +
+        ' Verify every claim, replace any evidence gaps, validate costs and have a human bid lead approve the final submission.</div>' +
       '<div class="proposal-layout"><article class="panel"><div class="panel-head"><div><h2 class="panel-title">Technical response</h2><p class="panel-sub">' +
       (current ? escapeHtml(current.title) + " · " + escapeHtml(current.funder) : "Select a real opportunity to start") +
-      '</p></div><button class="button button-small button-primary" data-action="generate-proposal"' + (current ? "" : " disabled") + ">Generate outline</button></div>" +
+      '</p></div><button class="button button-small button-primary" data-action="generate-proposal"' + (current ? "" : " disabled") +
+      ">" + (previewMode ? "Generate outline" : "Generate AI draft") + "</button></div>" +
       '<div class="panel-pad">' + editor + "</div></article><aside class=\"panel proposal-sidebar\"><div class=\"panel-head\"><div><h2 class=\"panel-title\">Bid readiness</h2><p class=\"panel-sub\">A practical review, not a compliance verdict</p></div></div>" +
       '<div class="panel-body"><select id="proposalSelect" class="select"><option value="">Choose opportunity</option>' + choices.map(function (item) {
         return '<option value="' + Number(item.id) + '"' + (Number(active) === Number(item.id) ? " selected" : "") + ">" + escapeHtml(item.title) + "</option>";
@@ -840,6 +892,7 @@
       state.projects = data.projects || [];
       state.proposals = data.proposals || [];
       state.activity = data.activity || [];
+      state.latestDiscovery = data.latest_discovery || null;
       document.getElementById("loginScreen").hidden = true;
       document.getElementById("appShell").hidden = false;
       var teamRequest = state.user && ["owner", "manager"].includes(state.user.role)
@@ -999,6 +1052,8 @@
       '<div class="form-field"><label for="newCurrency">CURRENCY</label><input id="newCurrency" name="currency" class="field" maxlength="3" value="USD"></div></div>' +
       '<div class="form-two"><div class="form-field"><label for="newDeadline">SUBMISSION DEADLINE</label><input id="newDeadline" name="deadline" class="field" type="date"></div>' +
       '<div class="form-field"><label for="newOwner">BID OWNER</label><input id="newOwner" name="owner" class="field" maxlength="120" value="' + escapeHtml(state.user.display_name || "") + '"></div></div>' +
+      '<div class="form-two"><div class="form-field"><label for="newSourceName">SOURCE NAME</label><input id="newSourceName" name="source_name" class="field" maxlength="120" placeholder="Buyer portal / source"></div>' +
+      '<div class="form-field"><label for="newSourceUrl">OFFICIAL NOTICE URL</label><input id="newSourceUrl" name="source_url" class="field" type="url" maxlength="1000" placeholder="https://…"></div></div>' +
       '<div class="form-field"><label for="newRequirements">SCOPE + MANDATORY CRITERIA</label><textarea id="newRequirements" name="requirements" class="textarea" maxlength="30000" placeholder="Paste or summarise the verified scope, eligibility, mandatory documents and evaluation requirements."></textarea></div>' +
       '<div class="form-error" id="opportunityError"></div><div class="modal-actions"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button button-primary" type="submit">Save opportunity →</button></div></form>');
   }
@@ -1023,8 +1078,10 @@
       '<dl class="details-list"><dt>Pipeline stage</dt><dd>' + stagePill(item.stage) + '</dd><dt>Deadline</dt><dd>' +
       dateLabel(item.deadline) + '</dd><dt>Indicative value</dt><dd>' + money(item.value, item.currency) + '</dd><dt>Bid owner</dt><dd>' +
       escapeHtml(item.owner || "Unassigned") + '</dd><dt>Sector</dt><dd>' + escapeHtml(item.sector || "Not set") +
+      '</dd><dt>Source</dt><dd>' + (item.source_url ? '<a href="' + escapeHtml(item.source_url) + '" target="_blank" rel="noopener noreferrer">' +
+        escapeHtml(item.source_name || item.source_url) + ' ↗</a>' : escapeHtml(item.source_name || "Not recorded")) +
       '</dd><dt>Requirements</dt><dd>' + escapeHtml(item.requirements || "No scope captured yet.") + '</dd><dt>Fit signal</dt><dd>' +
-      Number(item.fit_score || 0) + "/100 · Keyword screen only</dd><dt>Matched capabilities</dt><dd>" +
+      Number(item.fit_score || 0) + "/100 · " + escapeHtml(fit.basis || "Screening signal only") + '</dd><dt>Matched capabilities</dt><dd>' +
       escapeHtml((fit.matched || []).join(", ") || "No capability keywords matched") + '</dd><dt>Review flags</dt><dd>' +
       escapeHtml(review.join(" ") || "No known flags from basic keyword screening. Manually check the full RFP.") +
       '</dd><dt>Notes</dt><dd>' + escapeHtml(item.notes || "No notes yet.") + "</dd></dl>" + controls);
@@ -1172,16 +1229,34 @@
   }
 
   function exportCsv() {
-    var header = ["Title", "Buyer", "Sector", "Country", "Value", "Currency", "Deadline", "Stage", "Fit signal", "Owner"];
+    var header = ["Title", "Buyer", "Sector", "Country", "Value", "Currency", "Deadline", "Stage", "Fit signal", "Owner", "Source", "Source URL"];
     function cell(value) {
       var text = String(value == null ? "" : value);
       if (/^[=+\-@]/.test(text)) text = "'" + text;
       return '"' + text.replace(/"/g, '""') + '"';
     }
     var rows = [header].concat(state.opportunities.map(function (item) {
-      return [item.title, item.funder, item.sector, item.country, item.value, item.currency, item.deadline, item.stage, item.fit_score, item.owner];
+      return [item.title, item.funder, item.sector, item.country, item.value, item.currency, item.deadline, item.stage, item.fit_score, item.owner, item.source_name, item.source_url];
     }));
     downloadText("afrocloud-bid-pipeline.csv", rows.map(function (row) { return row.map(cell).join(","); }).join("\r\n"), "text/csv;charset=utf-8");
+  }
+
+  function exportWorkspaceBackup(button) {
+    setBusy(button, true, "Preparing backup…");
+    request("export").then(function (backup) {
+      var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
+      var anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = "afrocloud-bidops-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.setTimeout(function () { URL.revokeObjectURL(anchor.href); anchor.remove(); }, 500);
+      notify("Workspace backup downloaded to this device. Store it securely.");
+    }).catch(function (error) {
+      notify(error.message, true);
+    }).finally(function () {
+      setBusy(button, false);
+    });
   }
 
   function downloadText(filename, content, mime) {
@@ -1252,6 +1327,7 @@
     else if (name === "create-project") createProject(action.dataset.id);
     else if (name === "save-profile") saveProfile(action);
     else if (name === "export-csv") exportCsv();
+    else if (name === "export-backup") exportWorkspaceBackup(action);
     else if (name === "print-report") window.print();
     else if (name === "toggle-user") {
       updateStaff(action.dataset.id, { active: action.dataset.active === "true" }).catch(function (error) { notify(error.message, true); });

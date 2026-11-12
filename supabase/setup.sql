@@ -38,10 +38,21 @@ create table if not exists public.opportunities (
   notes text not null default '',
   fit_score integer not null default 0 check (fit_score between 0 and 100),
   fit_json jsonb not null default '{}'::jsonb,
-  created_by uuid not null references auth.users(id),
+  source_name text,
+  source_url text,
+  source_published_at timestamptz,
+  discovered_at timestamptz,
+  created_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.opportunities add column if not exists source_name text;
+alter table public.opportunities add column if not exists source_url text;
+alter table public.opportunities add column if not exists source_published_at timestamptz;
+alter table public.opportunities add column if not exists discovered_at timestamptz;
+alter table public.opportunities alter column created_by drop not null;
+create unique index if not exists opportunities_source_url_unique
+  on public.opportunities(source_url) where source_url is not null;
 create index if not exists opportunities_stage_deadline on public.opportunities(stage, deadline);
 create index if not exists opportunities_updated on public.opportunities(updated_at desc);
 
@@ -94,6 +105,19 @@ create table if not exists public.login_rate_limit (
   primary key (identity_hash, window_start)
 );
 
+create table if not exists public.discovery_runs (
+  id uuid primary key default gen_random_uuid(),
+  started_at timestamptz not null default now(),
+  completed_at timestamptz,
+  status text not null check (status in ('running', 'completed', 'failed')),
+  sources_json jsonb not null default '[]'::jsonb,
+  searches_count integer not null default 0 check (searches_count >= 0),
+  candidates_count integer not null default 0 check (candidates_count >= 0),
+  added_count integer not null default 0 check (added_count >= 0),
+  error_message text
+);
+create index if not exists discovery_runs_started on public.discovery_runs(started_at desc);
+
 create or replace function public.afc_set_updated_at()
 returns trigger
 language plpgsql
@@ -129,11 +153,12 @@ alter table public.projects enable row level security;
 alter table public.milestones enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.login_rate_limit enable row level security;
+alter table public.discovery_runs enable row level security;
 
 revoke all on public.bid_users, public.company_profile, public.opportunities, public.proposals,
-  public.projects, public.milestones, public.audit_log, public.login_rate_limit from anon, authenticated;
+  public.projects, public.milestones, public.audit_log, public.login_rate_limit, public.discovery_runs from anon, authenticated;
 grant all on public.bid_users, public.company_profile, public.opportunities, public.proposals,
-  public.projects, public.milestones, public.audit_log, public.login_rate_limit to service_role;
+  public.projects, public.milestones, public.audit_log, public.login_rate_limit, public.discovery_runs to service_role;
 grant usage, select on sequence public.audit_log_id_seq to service_role;
 
 create or replace function public.afc_record_login_hit(p_identity_hash text, p_limit integer default 10)
