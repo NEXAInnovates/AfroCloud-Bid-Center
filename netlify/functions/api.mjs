@@ -238,22 +238,41 @@ function fit(textValue, profile) {
 
 function proposalSections(opportunity, profile) {
   const country = opportunity.country || '[confirm delivery country]';
+  const capabilities = Array.isArray(profile.capabilities) ? profile.capabilities : [];
+  const caseStudies = Array.isArray(profile.case_studies) ? profile.case_studies : [];
+  const certifications = Array.isArray(profile.certifications) ? profile.certifications : [];
+  const opportunityText = `${opportunity.title} ${opportunity.requirements || ''}`.toLowerCase();
+  const relevantCapabilities = capabilities.filter((capability) => {
+    if (typeof capability !== 'string') return false;
+    const terms = capability.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 3);
+    return terms.some((term) => opportunityText.includes(term));
+  });
+  const scopeItems = (opportunity.requirements || '')
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 12)
+    .slice(0, 8)
+    .map((item) => item.slice(0, 1200));
+  const requirementMap = scopeItems.length
+    ? scopeItems.map((item, index) =>
+      `${index + 1}. Buyer requirement: ${item}\n   Proposed response: [BID TEAM TO PROVIDE a specific deliverable, method, owner, timing and acceptance evidence.]`).join('\n\n')
+    : '[Paste the buyer’s exact requirements, then map each mandatory item to a response and a named evidence source.]';
   return [
     {
       title: 'Executive summary',
-      text: `${profile.legal_name} is pleased to submit this proposal to ${opportunity.funder} for "${opportunity.title}". We propose a practical, measurable response aligned to the stated scope in ${country}. Confirm the delivery model, duration, learner numbers and outcome targets with the project team before submission.\n\nCompany positioning supplied by the bid team: ${profile.pitch}\nConfirm this positioning is accurate and relevant before submission.`,
+      text: `${profile.legal_name} is pleased to submit this proposal to ${opportunity.funder} for "${opportunity.title}". The opportunity is recorded for ${country}, with a submission deadline of ${opportunity.deadline || '[confirm deadline from the buyer notice]'}. Our proposed response should address the buyer’s stated scope, delivery context and evaluation criteria; the team must complete the specific solution, outcomes, duration, and resourcing before submission.\n\nCompany positioning supplied by the bid team: ${profile.pitch}\nConfirm this positioning is accurate and relevant before submission.\n\nThis starter draft uses the selected opportunity and saved company profile. Bracketed items are evidence or decisions the bid team must provide; no qualifications or past results have been invented.`,
     },
     {
       title: 'Understanding of the requirement',
-      text: `RFP requirements supplied by the bid team:\n${opportunity.requirements || '[Paste and verify the relevant terms of reference.]'}\n\nBefore approval, map every mandatory requirement to a response and a named evidence source.`,
+      text: `Opportunity: ${opportunity.title}\nBuyer: ${opportunity.funder}\n\nRequirement-to-response working matrix:\n${requirementMap}\n\nThe captured notice text is source material, not a complete compliance review. Compare this list with the full official solicitation, including eligibility, forms, submission instructions and evaluation criteria.`,
     },
     {
       title: 'Technical approach and delivery',
-      text: '1. Discover: validate users, context, constraints and success measures with the client.\n2. Design: agree solution blueprint, work plan, accessibility and acceptance criteria.\n3. Build: deliver in reviewable increments with documented quality checks.\n4. Launch: pilot, train administrators, transition operations and resolve launch blockers.\n5. Improve: report agreed outcome measures and recommendations.\n\nTailor every phase to the RFP; remove activities that are outside scope.',
+      text: `Proposed approach for "${opportunity.title}":\n1. Confirm: validate the buyer’s users, current environment, constraints, required outputs and measurable acceptance criteria.\n2. Design: agree a solution and work plan that directly addresses the captured scope${relevantCapabilities.length ? `, drawing on relevant profile capabilities: ${relevantCapabilities.join(', ')}` : ''}.\n3. Deliver: complete only the activities included in the final agreed scope, using reviewable milestones and documented quality checks.\n4. Validate and launch: test deliverables against buyer-approved acceptance criteria, resolve agreed issues and prepare handover or training where required.\n5. Report: provide agreed progress, risk and outcome reporting using measures approved by the buyer.\n\n[BID TEAM TO PROVIDE the specific tools, technical design, service levels, named owners and acceptance evidence. Remove any phase that is outside the solicitation.]`,
     },
     {
       title: 'Work plan and deliverables',
-      text: 'Discovery and mobilisation: [dates, outputs, client inputs]\nDesign and approval: [dates, outputs, approval owner]\nProduction and QA: [dates, outputs, acceptance criteria]\nPilot and launch: [dates, readiness gates, support model]\nEvaluation and handover: [dates, measures, ownership]\n\nReplace brackets with a priced, resourced schedule that matches the RFP.',
+      text: `Proposed schedule for ${opportunity.title}:\n1. Mobilisation and requirements confirmation: [BID TEAM TO PROVIDE dates, deliverables and buyer inputs]\n2. Solution/design approval: [BID TEAM TO PROVIDE dates, decision owner and approval evidence]\n3. Delivery and quality assurance: [BID TEAM TO PROVIDE work packages, staffing and quality gates]\n4. Buyer review, pilot or acceptance: [BID TEAM TO PROVIDE review periods, criteria and issue resolution]\n5. Handover and close-out: [BID TEAM TO PROVIDE training, documentation, support and completion evidence]\n\nBuild the final schedule from the solicitation’s required milestones and actual team availability. No dates or staffing commitments are inferred by this draft.`,
     },
     {
       title: 'Team and governance',
@@ -265,11 +284,11 @@ function proposalSections(opportunity, profile) {
     },
     {
       title: 'Relevant experience and evidence',
-      text: `Capability profile supplied by the bid team:\n${(profile.capabilities || []).map((item) => `- ${item}`).join('\n') || '[add verified capabilities]'}\n\nVerified case studies entered in the company profile:\n${(profile.case_studies || []).map((item) => `- ${item}`).join('\n') || '[insert comparable case studies with client permission, dates, outcomes and references]'}\n\nConfirm relevance, client permissions and evidence before submission. No customer names, performance metrics, offices or credentials have been inferred by this draft.`,
+      text: `Capabilities in the saved company profile:\n${capabilities.map((item) => `- ${item}`).join('\n') || '[add verified capabilities]'}\n\nPotentially relevant profile capabilities based on the title and captured scope:\n${relevantCapabilities.map((item) => `- ${item}`).join('\n') || '[BID TEAM TO SELECT and evidence the capabilities relevant to this notice]'}\n\nCase studies entered in the company profile:\n${caseStudies.map((item) => `- ${item}`).join('\n') || '[BID TEAM TO PROVIDE comparable case studies with client permission, dates, outcomes and references]'}\n\nConfirm relevance, client permissions and evidence before submission. No customer names, performance metrics, offices or credentials have been inferred by this draft.`,
     },
     {
       title: 'Financial proposal and compliance',
-      text: `Currency: ${opportunity.currency}\nIndicative opportunity value in the notice: ${Number(opportunity.value || 0).toFixed(2)}\n\nCredentials listed in the company profile (verify scope and expiry):\n${(profile.certifications || []).map((item) => `- ${item}`).join('\n') || '[add verified registrations or certifications, if required]'}\n\nAdd a costed budget, assumptions, taxes, reimbursables, payment milestones and validity period using the buyer's required format. Complete the compliance matrix against the final RFP and attach signed forms.`,
+      text: `Currency: ${opportunity.currency}\nIndicative opportunity value captured: ${Number(opportunity.value || 0).toFixed(2)} (verify against the official notice; this is not a proposed price).\n\nCredentials listed in the company profile (verify scope and expiry):\n${certifications.map((item) => `- ${item}`).join('\n') || '[BID TEAM TO PROVIDE verified registrations or certifications required by the buyer]'}\n\n[BID TEAM TO PROVIDE a costed budget, assumptions, taxes, reimbursables, payment milestones and validity period using the buyer's required format. Do not treat the notice value as AfroCloud’s bid price.]\n\nComplete the compliance matrix against the full final solicitation and attach all required signed forms.`,
     },
   ];
 }
@@ -752,9 +771,14 @@ async function handle(request) {
   if (route === 'proposal' && method === 'POST') {
     const opportunity = await getOpportunity(id);
     if (!opportunity) throw new HttpError(404, 'Opportunity not found.');
-    let sections = Object.hasOwn(input, 'sections')
-      ? proposalSections(opportunity, await getProfile())
-      : await generateAiProposalSections(opportunity, await getProfile());
+    const profile = await getProfile();
+    const savingEditedSections = Object.hasOwn(input, 'sections');
+    const draftMode = savingEditedSections ? 'edited' : process.env.ANTHROPIC_API_KEY ? 'ai' : 'structured';
+    let sections = savingEditedSections
+      ? proposalSections(opportunity, profile)
+      : draftMode === 'ai'
+        ? await generateAiProposalSections(opportunity, profile)
+        : proposalSections(opportunity, profile);
     if (Object.hasOwn(input, 'sections')) {
       if (!Array.isArray(input.sections) || input.sections.length > 30) throw new HttpError(400, 'Invalid proposal sections.');
       sections = input.sections.map((section) => ({
@@ -768,8 +792,8 @@ async function handle(request) {
       updated_by: user.id,
       status: 'Draft',
     }, 'resolution=merge-duplicates,return=minimal');
-    await audit(user.id, Object.hasOwn(input, 'sections') ? 'edit' : 'generate', 'proposal', id);
-    return json(200, { ok: true, sections });
+    await audit(user.id, savingEditedSections ? 'edit' : 'generate', 'proposal', id, { draft_mode: draftMode });
+    return json(200, { ok: true, sections, draft_mode: draftMode });
   }
 
   if (route === 'interview' && method === 'POST') {

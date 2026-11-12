@@ -717,20 +717,20 @@
     var editor = sections.length ? sections.map(function (section, index) {
       return '<div class="proposal-section"><label for="proposal-' + index + '">' + escapeHtml(section.title) +
         '</label><textarea class="textarea" id="proposal-' + index + '" data-proposal-section="' + index + '">' + escapeHtml(section.text) + "</textarea></div>";
-    }).join("") : emptyState("Build a structured draft", "Select an opportunity to generate an editable response outline. It will use the actual scope you capture and will flag where verified evidence is missing.");
+    }).join("") : emptyState("Build a structured draft", "Select an opportunity to generate an editable starter proposal. It will use the captured scope and company profile, and flag where verified evidence is missing.");
 
     document.getElementById("view-proposal").innerHTML =
       pageHead("RESPOND · PROVE · REFINE", "Proposal studio", "A disciplined first draft — never a substitute for the buyer's exact RFP or verified evidence.",
         '<button class="button" data-action="download-proposal"' + (sections.length ? "" : " disabled") + ">↓ Export text</button>" +
         '<button class="button button-primary" data-action="save-proposal"' + (sections.length ? "" : " disabled") + ">Save draft</button>") +
       '<div class="callout"><strong>Truth-before-polish.</strong> ' + (previewMode
-        ? "The interactive preview uses a built-in outline. In the live workspace, Claude drafts from the captured notice and company evidence; it does not guarantee awards."
-        : "Claude drafts a tailored proposal from the captured notice and company evidence; it does not guarantee awards.") +
-        ' Verify every claim, replace any evidence gaps, validate costs and have a human bid lead approve the final submission.</div>' +
+        ? "The interactive preview creates a sample structured outline."
+        : "Generate proposal draft creates an editable response tailored to the selected opportunity and saved company profile. If an AI key is configured it uses that service; otherwise the Netlify function builds a no-cost structured draft from the notice fields and templates without calling an AI service.") +
+        ' It is not a guaranteed or submission-ready bid. Verify every requirement and claim, replace evidence prompts, validate costs and have a human bid lead approve the final submission.</div>' +
       '<div class="proposal-layout"><article class="panel"><div class="panel-head"><div><h2 class="panel-title">Technical response</h2><p class="panel-sub">' +
       (current ? escapeHtml(current.title) + " · " + escapeHtml(current.funder) : "Select a real opportunity to start") +
       '</p></div><button class="button button-small button-primary" data-action="generate-proposal"' + (current ? "" : " disabled") +
-      ">" + (previewMode ? "Generate outline" : "Generate AI draft") + "</button></div>" +
+      ">" + (previewMode ? "Generate outline" : "Generate proposal draft") + "</button></div>" +
       '<div class="panel-pad">' + editor + "</div></article><aside class=\"panel proposal-sidebar\"><div class=\"panel-head\"><div><h2 class=\"panel-title\">Bid readiness</h2><p class=\"panel-sub\">A practical review, not a compliance verdict</p></div></div>" +
       '<div class="panel-body"><select id="proposalSelect" class="select"><option value="">Choose opportunity</option>' + choices.map(function (item) {
         return '<option value="' + Number(item.id) + '"' + (Number(active) === Number(item.id) ? " selected" : "") + ">" + escapeHtml(item.title) + "</option>";
@@ -1123,14 +1123,16 @@
       notify("Choose an opportunity first.", true);
       return;
     }
-    setBusy(button, true, "Building outline…");
+    setBusy(button, true, "Building tailored draft…");
     request("proposal", { method: "POST", id: state.activeProposal, body: {} }).then(function (data) {
       state.proposalSections = data.sections || [];
       var item = opportunityById(state.activeProposal);
       state.proposals = state.proposals.filter(function (proposal) { return Number(proposal.opportunity_id) !== Number(state.activeProposal); });
       state.proposals.push({ opportunity_id: state.activeProposal, status: "Draft", opportunity_title: item ? item.title : "" });
       render();
-      notify("Draft outline created. Replace every evidence prompt.");
+      notify(data.draft_mode === "ai"
+        ? "AI proposal draft created. Verify every claim and replace evidence prompts."
+        : "No-cost structured draft created and saved. Replace evidence prompts and complete the compliance checks.");
     }).catch(function (error) {
       notify(error.message, true);
       setBusy(button, false);
