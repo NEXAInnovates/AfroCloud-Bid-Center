@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">NEXA connected mark</title>
+  <defs>
+    <linearGradient id="nexa" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#0b8064"/>
+      <stop offset="1" stop-color="#28b99a"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 3 58 18v28L32 61 6 46V18z" fill="#eaf4ea" stroke="url(#nexa)" stroke-width="2"/>
+  <path d="M18 43V21h4l20 16V21h4v22h-4L22 27v16z" fill="url(#nexa)"/>
+  <circle cx="49" cy="15" r="4" fill="#c6e98b"/>
+</svg>

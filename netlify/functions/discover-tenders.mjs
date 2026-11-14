@@ -18,36 +18,6 @@ const TED_FIELDS = [
   'buyer-country',
   'place-of-performance',
 ];
-const FIT_GROUPS = [
-  {
-    name: 'Digital learning and training',
-    terms: [
-      'digital learning', 'e-learning', 'elearning', 'online learning', 'learning platform',
-      'learning management system', 'instructional design', 'learning content',
-      'microlearning', 'education technology', 'educational technology', 'curriculum development',
-      'training platform', 'training content', 'training services', 'digital skills',
-    ],
-  },
-  {
-    name: 'Programme and project delivery',
-    terms: [
-      'programme management', 'program management', 'project management office',
-      'project management', 'programme delivery', 'program delivery', 'capacity building',
-      'implementation support', 'technical assistance', 'monitoring and evaluation',
-    ],
-  },
-  {
-    name: 'Cloud, cybersecurity and digital systems',
-    terms: [
-      'cloud computing', 'cloud services', 'cybersecurity', 'cyber security',
-      'information security', 'data analytics', 'data management', 'digital transformation',
-      'software development', 'information technology', 'ict services', 'systems integration',
-      'data protection',
-    ],
-  },
-];
-
-const PROFILE_QUERY = 'select=profile_json&id=eq.1&limit=1';
 const LOOKBACK_DAYS = 7;
 const MAX_SOURCE_RECORDS = 100;
 const MAX_SOURCE_PAGES = 3;
@@ -164,12 +134,7 @@ function buildTedQuery(terms, fromDate) {
   return `publication-date >= ${fromDate} AND notice-type = cn-standard AND (${titleAndDescription.join(' OR ')})`;
 }
 
-async function searchTed(fromDate) {
-  const termGroups = [
-    ['digital learning', 'e-learning', 'education technology', 'instructional design', 'training content'],
-    ['cloud computing', 'cybersecurity', 'digital transformation', 'data analytics', 'systems integration'],
-    ['programme management', 'project management', 'capacity building', 'technical assistance'],
-  ];
+async function searchTed(termGroups, fromDate) {
   const results = [];
   const errors = [];
   let searchesCount = 0;
@@ -286,57 +251,98 @@ function mapUkNotice(release) {
   };
 }
 
+const MATCH_STOP_WORDS = new Set(['with', 'from', 'into', 'that', 'this', 'your', 'their', 'about', 'service', 'services', 'solution', 'solutions', 'support', 'system', 'systems']);
+
+function normalized(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function profileItems(items) {
+  return Array.isArray(items) ? [...new Set(items.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean))] : [];
+}
+
+function matchesItem(item, searchable) {
+  const phrase = normalized(item);
+  if (!phrase) return false;
+  if (` ${searchable} `.includes(` ${phrase} `)) return true;
+  const words = phrase.split(' ').filter((word) => word.length > 3 && !MATCH_STOP_WORDS.has(word));
+  if (!words.length) return false;
+  const hits = words.filter((word) => searchable.includes(word)).length;
+  return hits >= Math.max(1, Math.ceil(words.length * 0.6));
+}
+
 function matchFit(candidate, profile) {
-  const searchable = `${candidate.title} ${candidate.description}`.toLowerCase();
-  const matched = new Set();
-  const matchedGroups = [];
-  for (const group of FIT_GROUPS) {
-    const hits = group.terms.filter((term) => searchable.includes(term));
-    if (hits.length) {
-      matchedGroups.push(group.name);
-      hits.forEach((hit) => matched.add(hit));
-    }
-  }
-  const capabilities = Array.isArray(profile?.capabilities) ? profile.capabilities.slice(0, 20) : [];
-  for (const capability of capabilities) {
-    if (typeof capability !== 'string') continue;
-    const phrase = capability.trim().toLowerCase();
-    if (phrase.length >= 8 && searchable.includes(phrase)) matched.add(capability.trim());
-  }
-  if (!matched.size) return null;
-  const fitScore = Math.min(95, 40 + matchedGroups.length * 12 + matched.size * 5);
-  if (fitScore < 55) return null;
+  const searchable = normalized([
+    candidate.title, candidate.description, candidate.country, candidate.funder,
+  ].join(' '));
+  const dimensions = [];
+  const matched = [];
+  const missing = [];
+  const addDimension = (label, items, weight) => {
+    const values = profileItems(items);
+    if (!values.length) return;
+    const hits = values.filter((item) => matchesItem(item, searchable));
+    const misses = values.filter((item) => !hits.includes(item));
+    dimensions.push({ label, matched: hits.length, total: values.length, weight, score: Math.round(hits.length / values.length * 100) });
+    matched.push(...hits.map((item) => `${label}: ${item}`));
+    missing.push(...misses.map((item) => `${label}: ${item}`));
+  };
+  addDimension('Capability', profile.capabilities, 45);
+  addDimension('Search term', profile.preferred_keywords, 20);
+  addDimension('Sector', profile.preferred_sectors, 15);
+  addDimension('Target market', profile.preferred_countries, 10);
+  addDimension('Buyer type', profile.preferred_buyer_types, 10);
+  const weight = dimensions.reduce((total, item) => total + item.weight, 0);
+  const fitScore = weight
+    ? Math.round(dimensions.reduce((total, item) => total + item.score * item.weight, 0) / weight)
+    : 0;
+  if (!dimensions.some((item) => item.label === 'Capability' && item.matched > 0) || fitScore < 35) return null;
+  const reason = matched.length
+    ? `Profile alignment found: ${matched.slice(0, 5).join(', ')}.`
+    : 'Some profile dimensions align with the captured notice.';
   return {
     fitScore,
-    matched: [...matched].slice(0, 12),
-    reason: `Keyword match across ${matchedGroups.join(', ') || 'company capabilities'}. This is a preliminary screen, not an eligibility decision.`,
+    matched: [...new Set(matched)],
+    missing,
+    dimensions,
+    reason: `${reason} This is not an eligibility decision or award prediction.`,
   };
 }
 
-async function recordRun(id, fields) {
-  await supabase(`discovery_runs?id=eq.${encodeURIComponent(id)}`, 'PATCH', fields);
+function termsForProfile(profile) {
+  const terms = profileItems([
+    ...(profile.capabilities || []),
+    ...(profile.preferred_keywords || []),
+    ...(profile.preferred_sectors || []),
+  ]).map((item) => item.replace(/[^a-z0-9\s-]/gi, ' ').replace(/\s+/g, ' ').trim())
+    .filter((item) => item.length >= 4)
+    .slice(0, 20);
+  const groups = [];
+  for (let index = 0; index < terms.length; index += 5) groups.push(terms.slice(index, index + 5));
+  return groups;
 }
 
-async function runDiscovery() {
+async function recordRun(id, organizationId, fields) {
+  await supabase(`discovery_runs?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(organizationId)}`, 'PATCH', fields);
+}
+
+async function processOrganization(organizationId, profile, ukResults, ukSearches, ukErrors, fromDate, now) {
   const runRows = await supabase('discovery_runs', 'POST', {
+    organization_id: organizationId,
     status: 'running',
     sources_json: SOURCES.map((source) => source.name),
   });
   const runId = runRows?.[0]?.id;
-  if (!runId) throw new Error('Could not create discovery run record.');
+  if (!runId) throw new Error(`Could not create discovery run for organization ${organizationId}.`);
 
   try {
-    const profiles = await supabase(`company_profile?${PROFILE_QUERY}`);
-    const profile = profiles?.[0]?.profile_json || {};
-    const now = new Date();
-    const fromDate = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-    const tedFromDate = fromDate.toISOString().slice(0, 10).replace(/-/g, '');
-    const feedResults = [];
-    const sourceErrors = [];
-    let searchesCount = 0;
-
+    const sourceErrors = [...ukErrors];
+    let searchesCount = ukSearches;
+    const feedResults = [...ukResults];
+    const terms = termsForProfile(profile);
+    if (!terms.length) throw new Error('The saved profile has no usable capability or search terms.');
     try {
-      const ted = await searchTed(tedFromDate);
+      const ted = await searchTed(terms, fromDate.toISOString().slice(0, 10).replace(/-/g, ''));
       feedResults.push(...ted.opportunities);
       searchesCount += ted.searchesCount;
       if (ted.errors.length) sourceErrors.push(`TED partial failure: ${ted.errors.join(' ')}`);
@@ -344,16 +350,7 @@ async function runDiscovery() {
       sourceErrors.push(`TED: ${error.message}`);
       console.error('TED public notices search failed.', error.message);
     }
-    try {
-      const uk = await searchUkFeed(fromDate, now);
-      feedResults.push(...uk.opportunities);
-      searchesCount += uk.searchesCount;
-      if (uk.errors.length) sourceErrors.push(`UK Find a Tender partial failure: ${uk.errors.join(' ')}`);
-    } catch (error) {
-      sourceErrors.push(`UK Find a Tender: ${error.message}`);
-      console.error('UK Find a Tender feed request failed.', error.message);
-    }
-    if (!searchesCount) throw new Error(sourceErrors.join(' '));
+    if (!searchesCount) throw new Error(sourceErrors.join(' ') || 'No procurement sources returned usable pages.');
 
     const unique = new Map();
     for (const candidate of feedResults) {
@@ -375,39 +372,45 @@ async function runDiscovery() {
     for (let offset = 0; offset < candidates.length; offset += 50) {
       const sourceUrls = candidates.slice(offset, offset + 50).map((candidate) => `"${candidate.sourceUrl}"`);
       const filter = encodeURIComponent(`in.(${sourceUrls.join(',')})`);
-      const existing = await supabase(`opportunities?select=source_url&source_url=${filter}`);
+      const organization = encodeURIComponent(`eq.${organizationId}`);
+      const existing = await supabase(`opportunities?select=source_url&organization_id=${organization}&source_url=${filter}`);
       for (const row of existing || []) existingUrls.add(row.source_url);
     }
 
     const newCandidates = candidates.filter((candidate) => !existingUrls.has(candidate.sourceUrl));
     const records = newCandidates.map((candidate) => ({
-        title: candidate.title,
-        funder: candidate.funder,
-        funder_type: 'Public procurement / institutional opportunity',
-        sector: candidate.fit.matched.join(', ').slice(0, 100) || 'Digital services',
-        country: candidate.country,
-        currency: candidate.currency,
-        value: candidate.value,
-        deadline: candidate.deadline,
-        stage: 'Discovered',
-        requirements: candidate.description.slice(0, 30000),
-        owner: '',
-        notes: `Daily public-source discovery from ${candidate.sourceName}. Confirm the original notice, supplier eligibility, live status and deadline before bidding. ${candidate.fit.reason}`,
-        fit_score: candidate.fit.fitScore,
-        fit_json: {
-          basis: 'Deterministic keyword screening of public notice text; not an eligibility decision.',
-          matched: candidate.fit.matched,
-          review: [
-            'Check whether the notice accepts suppliers based in Kenya/East Africa.',
-            'Confirm mandatory registrations, qualification criteria and current deadline on the buyer notice.',
-          ],
-          fit_reason: candidate.fit.reason,
-        },
-        source_name: candidate.sourceName,
-        source_url: candidate.sourceUrl,
-        source_published_at: candidate.publishedAt,
-        discovered_at: now.toISOString(),
-        created_by: null,
+      organization_id: organizationId,
+      title: candidate.title,
+      funder: candidate.funder,
+      funder_type: 'Public procurement / institutional opportunity',
+      sector: candidate.fit.matched.join(', ').slice(0, 100) || 'Digital services',
+      country: candidate.country,
+      currency: candidate.currency,
+      value: candidate.value,
+      deadline: candidate.deadline,
+      stage: 'Discovered',
+      requirements: candidate.description.slice(0, 30000),
+      owner: '',
+      notes: `Daily public-source discovery from ${candidate.sourceName}. Confirm the original notice, supplier eligibility, live status and deadline before bidding. ${candidate.fit.reason}`,
+      fit_score: candidate.fit.fitScore,
+      fit_json: {
+        basis: 'Weighted keyword alignment to this organization profile; not an eligibility decision.',
+        matched: candidate.fit.matched,
+        missing: candidate.fit.missing,
+        dimensions: candidate.fit.dimensions,
+        review: [
+          ...candidate.fit.missing.slice(0, 5).map((item) => `Profile preference not found in captured notice: ${item}.`),
+          'Check whether the notice accepts suppliers based in your operating markets.',
+          'Confirm mandatory registrations, qualification criteria and current deadline on the buyer notice.',
+          'This profile-alignment score is not a supplier eligibility, compliance, or award prediction.',
+        ],
+        fit_reason: candidate.fit.reason,
+      },
+      source_name: candidate.sourceName,
+      source_url: candidate.sourceUrl,
+      source_published_at: candidate.publishedAt,
+      discovered_at: now.toISOString(),
+      created_by: null,
     }));
 
     let added = 0;
@@ -415,9 +418,8 @@ async function runDiscovery() {
       const inserted = await supabase('opportunities', 'POST', records.slice(offset, offset + 25));
       added += Array.isArray(inserted) ? inserted.length : 0;
     }
-
     const warning = sourceErrors.length ? sourceErrors.join(' ').slice(0, 500) : null;
-    await recordRun(runId, {
+    await recordRun(runId, organizationId, {
       status: 'completed',
       completed_at: new Date().toISOString(),
       searches_count: searchesCount,
@@ -425,35 +427,86 @@ async function runDiscovery() {
       added_count: added,
       error_message: warning,
     });
-    try {
-      await supabase('audit_log', 'POST', {
-        user_id: null,
-        action: 'auto_discover',
-        entity_type: 'discovery',
-        entity_id: runId,
-        detail_json: {
-          sources: SOURCES.map((source) => source.name),
-          searches_count: searchesCount,
-          candidates_count: unique.size,
-          added_count: added,
-          warning,
-        },
-      });
-    } catch (error) {
-      console.error('Public-source discovery completed but its audit event could not be saved.', error.message);
-    }
-    console.info('Daily public-source discovery completed.', {
-      searchesCount, candidates: unique.size, added, warning,
+    await supabase('audit_log', 'POST', {
+      organization_id: organizationId,
+      user_id: null,
+      action: 'auto_discover',
+      entity_type: 'discovery',
+      entity_id: runId,
+      detail_json: {
+        sources: SOURCES.map((source) => source.name),
+        searches_count: searchesCount,
+        candidates_count: unique.size,
+        added_count: added,
+        warning,
+      },
+    });
+    console.info('Daily profile-based discovery completed.', {
+      organizationId, searchesCount, candidates: unique.size, added, warning,
     });
     return { searchesCount, candidates: unique.size, added, warning };
   } catch (error) {
-    await recordRun(runId, {
+    await recordRun(runId, organizationId, {
       status: 'failed',
       completed_at: new Date().toISOString(),
       error_message: error.message.slice(0, 500),
     });
     throw error;
   }
+}
+
+async function runDiscovery() {
+  const organizations = await supabase('organizations?select=id&order=created_at.asc');
+  const profiles = await supabase('organization_profiles?select=organization_id,profile_json');
+  const profileByOrganization = new Map((profiles || []).map((row) => [row.organization_id, row.profile_json || {}]));
+  const activeOrganizations = (organizations || []).filter((organization) =>
+    profileByOrganization.get(organization.id)?.onboarding_complete === true);
+  if (!activeOrganizations.length) {
+    console.info('Daily public-source discovery skipped because no organization has completed its profile.');
+    return { organizations: 0, searchesCount: 0, candidates: 0, added: 0 };
+  }
+
+  const now = new Date();
+  const fromDate = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  let ukResults = [];
+  let ukSearches = 0;
+  let ukErrors = [];
+  try {
+    const uk = await searchUkFeed(fromDate, now);
+    ukResults = uk.opportunities;
+    ukSearches = uk.searchesCount;
+    ukErrors = uk.errors.map((error) => `UK Find a Tender partial failure: ${error}`);
+  } catch (error) {
+    ukErrors = [`UK Find a Tender: ${error.message}`];
+    console.error('UK Find a Tender feed request failed.', error.message);
+  }
+
+  const results = [];
+  const failures = [];
+  for (const organization of activeOrganizations) {
+    try {
+      results.push(await processOrganization(
+        organization.id,
+        profileByOrganization.get(organization.id),
+        ukResults,
+        ukSearches,
+        ukErrors,
+        fromDate,
+        now,
+      ));
+    } catch (error) {
+      failures.push(`Organization ${organization.id}: ${error.message}`);
+      console.error('Profile-based discovery failed for an organization.', organization.id, error.message);
+    }
+  }
+  const totals = results.reduce((summary, result) => ({
+    searchesCount: summary.searchesCount + result.searchesCount,
+    candidates: summary.candidates + result.candidates,
+    added: summary.added + result.added,
+  }), { searchesCount: 0, candidates: 0, added: 0 });
+  if (failures.length) console.error('One or more organization discovery runs failed.', failures);
+  if (!results.length) throw new Error(failures.join(' '));
+  return { organizations: results.length, ...totals, failures };
 }
 
 export default async function handler() {

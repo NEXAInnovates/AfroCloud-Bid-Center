@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b33">
+  <title>NEXA Platform Admin</title>
+  <link rel="stylesheet" href="assets/app.css">
+  <script src="assets/platform-admin.js" defer></script>
+</head>
+<body>
+  <main class="platform-page">
+    <a class="brand" href="index.html"><img class="brand-logo" src="assets/nexa-mark.svg" alt="NEXA"><span class="brand-wordmark">NEXA</span><span><b>BIDOPS</b><small>PLATFORM ADMIN</small></span></a>
+    <section id="adminLogin" class="platform-panel platform-login">
+      <span class="eyebrow">NEXA INTERNAL · RESTRICTED</span>
+      <h1 class="platform-heading">Platform administration</h1>
+      <p class="panel-sub">Sign in with your NEXA owner account. This console shows customer account and opt-in lead information across workspaces.</p>
+      <form id="adminLoginForm">
+        <div class="form-field"><label for="adminEmail">EMAIL</label><input id="adminEmail" class="field" type="email" required autocomplete="username"></div>
+        <div class="form-field"><label for="adminPassword">PASSWORD</label><input id="adminPassword" class="field" type="password" required autocomplete="current-password"></div>
+        <div id="adminLoginError" class="platform-error" role="alert"></div>
+        <button class="button button-primary" type="submit">Sign in securely →</button>
+      </form>
+      <form id="adminSetupForm" hidden>
+        <hr>
+        <h2 class="panel-title">First-time master-owner setup</h2>
+        <p class="panel-sub">Create the first NEXA platform administrator using a one-time Netlify setup key. This only works while no platform admin exists.</p>
+        <div class="form-field"><label for="setupKey">ONE-TIME SETUP KEY</label><input id="setupKey" class="field" type="password" required autocomplete="off"></div>
+        <div id="adminSetupError" class="platform-error" role="alert"></div>
+        <button class="button button-primary" type="submit">Make this my master account</button>
+      </form>
+      <p class="auth-support"><a href="index.html">Return to NEXA BidOps</a></p>
+    </section>
+    <section id="adminConsole" hidden>
+      <header class="page-head"><div><span class="eyebrow">CUSTOMERS · TRIALS · BILLING · SUPPORT</span><h1 class="platform-heading">NEXA customer operations</h1><p>Customer information stays in your Supabase project. Only designated platform administrators can view it here.</p></div><div class="page-actions"><button id="refreshAdmin" class="button" type="button">Refresh</button><button id="exportLeads" class="button button-primary" type="button">Export opted-in contacts</button><button id="adminLogout" class="button" type="button">Sign out</button></div></header>
+      <div id="adminStats" class="platform-stats"></div>
+      <article class="platform-panel"><div class="panel-head"><div><h2 class="panel-title">Customer workspaces</h2><p class="panel-sub">Live, trialing, expired, inactive and returning accounts.</p></div></div><div class="platform-table-wrap"><table class="platform-table"><thead><tr><th>COMPANY / WORKSPACE</th><th>OWNER CONTACT</th><th>PLAN / BILLING</th><th>TRIAL</th><th>STATUS</th><th>CONTROLS</th></tr></thead><tbody id="customerRows"></tbody></table></div></article>
+      <article class="platform-panel"><div class="panel-head"><div><h2 class="panel-title">Customer team accounts</h2><p class="panel-sub">Registered members, recent sign-in, account status and explicit marketing consent.</p></div></div><div class="platform-table-wrap"><table class="platform-table"><thead><tr><th>PERSON</th><th>EMAIL</th><th>PHONE</th><th>WORKSPACE</th><th>ROLE</th><th>LAST SIGN-IN</th><th>MARKETING OPT-IN</th><th>STATUS</th><th>CONTROLS</th></tr></thead><tbody id="memberRows"></tbody></table></div></article>
+      <article class="platform-panel"><div class="panel-head"><div><h2 class="panel-title">Support requests and interested leads</h2><p class="panel-sub">Only contacts who explicitly opted in should receive marketing emails. Support requests are not marketing consent.</p></div></div><div class="platform-table-wrap"><table class="platform-table"><thead><tr><th>RECEIVED</th><th>CONTACT</th><th>REQUEST</th><th>MESSAGE</th><th>MARKETING OPT-IN</th><th>STATUS</th></tr></thead><tbody id="leadRows"></tbody></table></div></article>
+      <article class="platform-panel"><div class="panel-head"><div><h2 class="panel-title">Master-account audit trail</h2><p class="panel-sub">Recent changes made in this console.</p></div></div><div class="platform-table-wrap"><table class="platform-table"><thead><tr><th>WHEN</th><th>ADMIN ACTION</th><th>WORKSPACE</th><th>DETAIL</th></tr></thead><tbody id="adminEventRows"></tbody></table></div></article>
+      <p class="auth-support"><a href="mailto:nexainnovates@gmail.com">Emergency support: nexainnovates@gmail.com</a></p>
+    </section>
+    <div id="adminNotice" class="notice" role="status" aria-live="polite"></div>
+  </main>
+</body>
+</html>

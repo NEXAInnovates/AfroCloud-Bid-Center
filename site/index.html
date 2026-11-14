@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b33">
-  <title>BidOps Studio · AfroCloud Technologies</title>
+  <title>BidOps Studio · NEXA</title>
   <link rel="stylesheet" href="assets/app.css">
   <script src="assets/app.js" defer></script>
 </head>
@@ -12,8 +12,9 @@
   <div id="notice" class="notice" role="status" aria-live="polite"></div>
   <section id="loginScreen" class="login-screen">
     <div class="login-visual">
-      <a class="brand brand-light" href="#" aria-label="AfroCloud BidOps Studio">
-        <img class="brand-logo" src="assets/afrocloud-logo.png" alt="AfroCloud Technologies — Learn Achieve Advance">
+      <a class="brand brand-light" href="#" aria-label="NEXA BidOps Studio">
+        <img class="brand-logo" src="assets/nexa-mark.svg" alt="NEXA">
+        <span class="brand-wordmark">NEXA</span>
       </a>
       <div class="login-copy">
         <span class="eyebrow">THE OPPORTUNITY-TO-IMPACT PLATFORM</span>
@@ -25,16 +26,69 @@
     </div>
     <div class="login-form-wrap">
       <form id="loginForm" class="login-form">
-        <span class="eyebrow">AFROCLOUD TECHNOLOGIES</span>
+        <span class="eyebrow">NEXA BIDOPS</span>
         <h2>Welcome back</h2>
         <label for="username">Account email</label>
         <input id="username" name="username" type="email" autocomplete="username" required maxlength="190">
         <label for="password">Password</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="72">
         <button class="button button-primary button-wide" type="submit">Sign in <span aria-hidden="true">→</span></button>
-        <button class="button button-wide preview-entry" id="previewButton" type="button" hidden>Preview workspace <span aria-hidden="true">↗</span></button>
         <div id="loginError" class="form-error" role="alert"></div>
+        <p class="auth-switch">Don't have an account? <button class="text-button" type="button" data-auth-view="signup">Create account</button></p>
+        <p class="auth-support"><button class="text-button" type="button" data-action="support">Contact support</button> · <a href="mailto:nexainnovates@gmail.com">Emergency email</a></p>
       </form>
+      <form id="signupForm" class="login-form" hidden>
+        <span class="eyebrow">START YOUR PRIVATE WORKSPACE</span>
+        <h2>Create your account</h2>
+        <p class="auth-lede">Your seven-day trial starts when you register. No payment is taken to start.</p>
+        <label for="signupName">Full name</label>
+        <input id="signupName" name="display_name" type="text" autocomplete="name" required maxlength="120">
+        <label for="signupEmail">Work email</label>
+        <input id="signupEmail" name="email" type="email" autocomplete="email" required maxlength="254">
+        <label for="signupPhone">Phone number <span>(optional)</span></label>
+        <input id="signupPhone" name="phone" type="tel" autocomplete="tel" maxlength="32" placeholder="+254…">
+        <label for="signupPassword">Create password</label>
+        <input id="signupPassword" name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="72">
+        <label class="consent-option"><input name="marketing_consent" type="checkbox" value="true"> Yes, email me product updates and useful BidOps tips. This is optional; I can unsubscribe.</label>
+        <button class="button button-primary button-wide" type="submit">Create account <span aria-hidden="true">→</span></button>
+        <div id="signupError" class="form-error" role="alert"></div>
+        <p class="auth-switch">Already have an account? <button class="text-button" type="button" data-auth-view="login">Sign in</button></p>
+      </form>
+      <section id="planScreen" class="plan-screen" hidden>
+        <span class="eyebrow">YOUR 7-DAY TRIAL IS READY</span>
+        <h2>Choose how you want to grow.</h2>
+        <p class="auth-lede">Select a plan to continue. Start the free trial now, or subscribe securely by card or M-Pesa. Plans are billed monthly.</p>
+        <div class="plan-grid">
+          <article class="plan-card">
+            <span class="plan-label">PRO</span><h3>Find and shape the next bid.</h3>
+            <p class="plan-price">$10 <small>/ month</small></p>
+            <ul><li>Daily opportunity discovery</li><li>Profile-based fit explanations</li><li>Proposal drafting workspace</li><li>Interview preparation</li></ul>
+            <button class="button plan-trial" data-plan="pro" type="button">Start Pro trial</button>
+            <div class="plan-payments"><button class="text-button" data-checkout="stripe" data-plan="pro" type="button">Pay by Visa / Mastercard</button><button class="text-button" data-checkout="mpesa" data-plan="pro" type="button">Pay by M-Pesa</button></div>
+          </article>
+          <article class="plan-card plan-featured">
+            <span class="plan-label">PREMIUM · MOST POPULAR</span><h3>Run every project from one place.</h3>
+            <p class="plan-price">$50 <small>/ month</small></p>
+            <ul><li>Everything in Pro</li><li>Portfolio timeline and project launch</li><li>Multi-project delivery Gantt</li><li>Email-agent connector when provider access is enabled</li></ul>
+            <button class="button button-primary plan-trial" data-plan="premium" type="button">Start Premium trial</button>
+            <div class="plan-payments"><button class="text-button" data-checkout="stripe" data-plan="premium" type="button">Pay by Visa / Mastercard</button><button class="text-button" data-checkout="mpesa" data-plan="premium" type="button">Pay by M-Pesa</button></div>
+          </article>
+          <article class="plan-card">
+            <span class="plan-label">ENTERPRISE</span><h3>Turn delivery into better decisions.</h3>
+            <p class="plan-price">$100 <small>/ month</small></p>
+            <ul><li>Everything in Premium</li><li>AI-assisted proposal drafting</li><li>Reviewed learning and evidence library</li><li>Company-wide operating profile</li></ul>
+            <button class="button plan-trial" data-plan="enterprise" type="button">Start Enterprise trial</button>
+            <div class="plan-payments"><button class="text-button" data-checkout="stripe" data-plan="enterprise" type="button">Pay by Visa / Mastercard</button><button class="text-button" data-checkout="mpesa" data-plan="enterprise" type="button">Pay by M-Pesa</button></div>
+          </article>
+        </div>
+        <label for="mpesaPhone">M-Pesa number <span>(only needed for M-Pesa checkout)</span></label>
+        <input id="mpesaPhone" name="mpesa_phone" type="tel" autocomplete="tel" maxlength="32" placeholder="+254…">
+        <p class="plan-disclaimer">Mailbox automation requires Google or Microsoft OAuth setup and is not active in this deployment. Until enabled, teams can record communication manually in the timeline.</p>
+        <p id="planMessage" class="form-error" role="status"></p>
+        <button class="text-button" type="button" data-auth-view="login">Back to sign in</button>
+        <p class="auth-support"><button class="text-button" type="button" data-action="support">Questions? Contact support</button></p>
+      </section>
+      <a class="admin-entry" href="platform-admin.html">NEXA platform administration</a>
     </div>
   </section>
 
@@ -42,7 +96,8 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <a class="brand" href="#" data-nav="dashboard">
-          <img class="brand-logo sidebar-brand-logo" src="assets/afrocloud-logo.png" alt="AfroCloud Technologies">
+          <img class="brand-logo sidebar-brand-logo" src="assets/nexa-mark.svg" alt="NEXA">
+          <span class="brand-wordmark">NEXA</span>
           <span><b>BIDOPS</b><small>STUDIO</small></span>
         </a>
         <button class="icon-button mobile-close" data-action="close-menu" aria-label="Close menu">×</button>
@@ -56,21 +111,23 @@
         <button class="nav-item" data-nav="proposal"><span class="nav-icon">✳</span>Proposal studio</button>
         <button class="nav-item" data-nav="interview"><span class="nav-icon">◉</span>Interview room</button>
         <button class="nav-item" data-nav="delivery"><span class="nav-icon">↗</span>Project launch</button>
+        <button class="nav-item" data-nav="learnings"><span class="nav-icon">✦</span>Learning review</button>
         <button class="nav-item" data-nav="profile"><span class="nav-icon">⌂</span>Company evidence</button>
         <button class="nav-item" data-nav="team" id="teamNav" hidden><span class="nav-icon">♙</span>Team access</button>
       </nav>
       <div class="sidebar-bottom">
         <div class="help-card"><span class="help-spark">✦</span><b>Win with evidence.</b><p>Every strong bid starts with a clear fit and proof the team can stand behind.</p></div>
-        <div class="account-row"><div class="avatar" id="userAvatar">A</div><div class="account-name"><b id="userName">AfroCloud team</b><small id="userRole">Workspace member</small></div><button class="icon-button" data-action="logout" aria-label="Sign out">↗</button></div>
+        <div class="account-row"><div class="avatar" id="userAvatar">N</div><div class="account-name"><b id="userName">Workspace member</b><small id="userRole">Workspace member</small></div><button class="icon-button" data-action="logout" aria-label="Sign out">↗</button></div>
       </div>
     </aside>
     <div id="scrim" class="scrim" data-action="close-menu"></div>
     <main class="main-shell">
       <header class="topbar">
-        <div class="topbar-left"><button class="icon-button menu-button" data-action="open-menu" aria-label="Open menu">☰</button><div class="breadcrumbs">AFROCLOUD <span>/</span> <b id="crumb">Executive brief</b></div></div>
+        <div class="topbar-left"><button class="icon-button menu-button" data-action="open-menu" aria-label="Open menu">☰</button><div class="breadcrumbs">NEXA <span>/</span> <b id="crumb">Executive brief</b></div></div>
         <div class="topbar-right"><span class="secure-status"><i></i> PRIVATE WORKSPACE</span><span id="today" class="today"></span><button class="button button-primary button-small" data-action="new-opportunity">＋ Capture opportunity</button></div>
       </header>
       <div class="content">
+        <section id="view-onboarding" class="view"></section>
         <section id="view-dashboard" class="view active"></section>
         <section id="view-opportunities" class="view"></section>
         <section id="view-pipeline" class="view"></section>
@@ -78,9 +135,10 @@
         <section id="view-proposal" class="view"></section>
         <section id="view-interview" class="view"></section>
         <section id="view-delivery" class="view"></section>
+        <section id="view-learnings" class="view"></section>
         <section id="view-profile" class="view"></section>
         <section id="view-team" class="view"></section>
-        <footer class="footer"><span>AFROCLOUD BIDOPS STUDIO</span><span>Private by design · Your team controls the evidence</span></footer>
+        <footer class="footer"><span>NEXA BIDOPS STUDIO</span><button class="text-button footer-support" type="button" data-action="support">Contact support</button><button class="text-button footer-support" type="button" data-action="manage-plan">Manage plan</button><span>Private by design · Your team controls the evidence</span><span>Design by NEXA</span></footer>
       </div>
     </main>
   </div>

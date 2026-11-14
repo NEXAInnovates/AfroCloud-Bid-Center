@@ -1,6 +1,8 @@
-# Netlify build — AfroCloud BidOps Studio
+# NEXA BidOps · Netlify deployment
 
 This is the Netlify-native deployment package for the dashboard. Netlify serves the static UI and runs its serverless API functions; the PHP application one level above is a separate PHP/MySQL hosting option.
+
+The self-serve flow stores account and trial records in Supabase. Customer owners can start a seven-day trial, choose Pro ($10/month), Premium ($50/month) or Enterprise ($100/month), and use hosted Stripe card checkout or M-Pesa checkout after provider configuration. Do not publish production checkout until live credentials, prices and webhook/callbacks have been tested.
 
 ## Opportunity discovery and source directory
 
@@ -13,11 +15,26 @@ Sources are deliberately categorized:
 - **DevelopmentAid, Devex and dgMarket** have varying free/paid access; check current limits and pricing before subscribing.
 - **UNjobs** is primarily an individual jobs index; use its website and other aggregators as manual research, not a company tender feed.
 
-The scheduled discovery function uses the anonymous [TED public notices API](https://docs.ted.europa.eu/api/latest/search.html) and the [UK Find a Tender OCDS feed](https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages). Both are free to query and require no search-provider API key. The function applies local capability-keyword screening and saves matching notices; it does not use Anthropic or scrape Google. This is separate from the manual Google/Bing links and is not an exhaustive web search.
+The scheduled discovery function uses the anonymous [TED public notices API](https://docs.ted.europa.eu/api/latest/search.html) and the [UK Find a Tender OCDS feed](https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages). Both are free to query and require no search-provider API key. For each organization with a completed profile, TED queries use that organization's capabilities, preferred keywords and sectors; retrieved notices are then scored against its profile and saved only to that organization. The UK feed is fetched once per scheduled run and screened separately for each organization. It does not use Anthropic or scrape Google.
 
-The capability terms are derived from the attached prototype, not independently verified AfroCloud qualifications. Broaden or narrow the search based on documented capacity. An external search result is not proof of eligibility, fit, availability or an active tender. Verify the buyer's original notice, legal-entity rules, registrations, mandatory criteria and submission deadline before capturing a real opportunity.
+The company profile is required on the first owner or manager sign-in. It includes capabilities, search keywords, target sectors and markets, buyer types and company evidence. Staff must ask their workspace administrator to complete an incomplete profile. Match percentages are weighted text-alignment signals (capabilities 45%, keywords 20%, sectors 15%, target markets 10%, buyer types 10%); they are not eligibility checks, compliance decisions, or win probabilities. An external result is not proof of eligibility, availability or an active tender. Verify the original notice, legal-entity rules, registrations, mandatory criteria and deadline.
 
-The login page and dashboard sidebar use the AfroCloud logo supplied for this project.
+## Product tiers and billing
+
+- **Pro:** daily discovery, fit explanations and one newly generated proposal draft per UTC day. Saved proposals can still be edited.
+- **Premium:** everything in Pro plus the shared project portfolio, delivery timeline and milestone Gantt.
+- **Enterprise:** everything in Premium plus Anthropic-assisted proposal generation and an AI learning library. Learning drafts are never approved automatically; an owner/manager must review them.
+- Google/Microsoft mailbox OAuth is **not enabled in this deployment**. Until email provider authorization is implemented and configured, communication must be logged manually; do not describe the mailbox agent as live.
+- Stripe Checkout is a monthly recurring subscription. M-Pesa uses a one-off STK push; it does not automatically charge next month. The app reminds customers before the paid period ends and pauses access if it expires.
+- A new account starts a seven-day trial without payment. Dashboard and transactional email reminders start with three days remaining. At trial/paid-period expiry, access to workspace records pauses; the customer can still sign in to pay. Verified payment events reactivate access.
+
+## Platform owner and customer records
+
+The restricted [NEXA platform administration page](site/platform-admin.html) shows all customer workspaces, registration dates, account status, last sign-in, trial/payment state, returning-customer flags, support enquiries and marketing opt-ins. The master owner can change workspace/contact/billing fields and deactivate/reactivate accounts. Deactivation preserves customer records and audit history; it is reversible.
+
+Marketing consent is optional and stored separately from account registration. The master console exports only contacts who opted in. A support enquiry is not marketing consent. Customer records stay in your Supabase project; use a privacy notice and retention period appropriate to your customers before launch.
+
+To establish your master account, first create a normal BidOps account, then sign in at `site/platform-admin.html`. Add a random `NEXA_PLATFORM_SETUP_KEY` of at least 32 characters to Netlify and use it once in the first-time setup panel. The first owner account becomes the NEXA platform administrator and receives an internal Enterprise subscription. Remove `NEXA_PLATFORM_SETUP_KEY` from Netlify after setup. Never share this key.
 
 ## Workspace preview
 
@@ -36,7 +53,7 @@ For local static preview, open `site/index.html?preview=1` in a browser. An Inte
 1. Extract the deployment ZIP on your computer first.
 2. In Netlify, create or open a site and choose **Deploy manually**.
 3. Drag the contents *inside* the extracted `site` folder (`index.html`, `_headers`, and `assets`) into the manual deploy dropzone. Do not upload the source ZIP itself or the parent folder.
-4. Open the generated `*.netlify.app` URL with `?preview=1` appended (for example `https://your-site.netlify.app/?preview=1`). Click **Preview workspace** on the sign-in page.
+4. Open the generated `*.netlify.app` URL with `?preview=1` appended (for example `https://your-site.netlify.app/?preview=1`). The sample workspace opens directly; it does not create accounts or save production data.
 
 This static/manual deploy is a product preview; it intentionally has no live account or persistent backend. The serverless API is enabled by a Git-connected or CLI build, not a manual static deploy.
 
@@ -49,53 +66,65 @@ This static/manual deploy is a product preview; it intentionally has no live acc
 
 Netlify CLI alternative: in this `netlify-deploy` directory, run `npx netlify-cli deploy --build`. Run `npx netlify-cli deploy --build --prod` only when you intend to publish the production site.
 
-## CEO / Project Manager admin login and staff accounts
+## Supabase, self-serve sign-up and payments
 
-The app has a private sign-in for the CEO/workspace owner, project managers and staff. There is **no public sign-up form**. Owners and managers use the Team access page to invite staff; the invite email lets each person set their own password. Passwords are never chosen or stored by the inviter.
-
-1. Create a Supabase project in an organization/account approved for AfroCloud data.
+1. Create a Supabase project in an organization/account approved for your customers' data.
 2. In the Supabase SQL editor for that project, run [`supabase/setup.sql`](supabase/setup.sql).
-3. Configure Supabase **Authentication → URL Configuration** with the deployed HTTPS Netlify site URL and its root as an allowed redirect URL. Configure a production SMTP sender for invitation emails; do not rely on Supabase's development email limits for staff onboarding.
-4. In **Authentication → Users**, invite the CEO/workspace owner using their work email. Copy that Auth user's UUID. In the SQL editor, grant the first owner using the actual UUID, email and verified display name:
-
-   ```sql
-   insert into public.bid_users (user_id, email, display_name, role)
-   values ('REPLACE-WITH-AUTH-USER-UUID', 'ceo@your-company.example', 'AfroCloud owner', 'owner');
-   ```
-
-   Replace both example values. The owner signs into BidOps with the invited email and the password they set from the invitation link.
-5. In Netlify site environment variables, add:
+3. Configure Supabase **Authentication → URL Configuration** with the deployed HTTPS Netlify site URL and root as an allowed redirect URL. Set the desired email-confirmation and password policies, and configure production SMTP for account verification and team invitations.
+4. In Netlify, set the following environment variables. Secrets belong only in the protected Functions runtime environment, never in `site`, browser code or a public ZIP:
 
    | Variable | Value |
    | --- | --- |
    | `SUPABASE_URL` | Project URL from Supabase API settings |
    | `SUPABASE_ANON_KEY` | Project publishable/anon key; used only for Auth requests |
    | `SUPABASE_SERVICE_ROLE_KEY` | Project service-role key; server-side functions only — never put it in `site`, browser JavaScript, or a public build setting |
-   | `AFROCLOUD_APP_KEY` | A unique random secret of at least 32 characters for HMAC-based login rate limiting |
+   | `NEXA_APP_KEY` | A unique random secret of at least 32 characters for HMAC-based login rate limiting |
+   | `NEXA_PLATFORM_SETUP_KEY` | One-time master-owner setup secret (remove after first platform-admin setup) |
+   | `STRIPE_SECRET_KEY` | Stripe secret API key for hosted recurring card checkout |
+   | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
+   | `MPESA_ENVIRONMENT` | `sandbox` while testing; `production` after Daraja approval |
+   | `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET` | Daraja API credentials |
+   | `MPESA_SHORTCODE`, `MPESA_PASSKEY` | Approved paybill/till details and STK passkey |
+   | `MPESA_CALLBACK_TOKEN` | Unique random callback guard secret of at least 32 characters |
+   | `NEXA_PRICE_KES_PRO`, `NEXA_PRICE_KES_PREMIUM`, `NEXA_PRICE_KES_ENTERPRISE` | Approved whole-KES plan prices |
+   | `RESEND_API_KEY`, `NEXA_EMAIL_FROM` | Resend API secret and a verified sender address |
+   | `NEXA_SUPPORT_EMAIL` | Support inbox; defaults to `nexainnovates@gmail.com` |
+   | `NEXA_SITE_URL` | Deployed HTTPS site URL used in reminder emails |
 
-6. To enable **AI-assisted proposal drafting**, add `ANTHROPIC_API_KEY` as a secret environment variable in Netlify and mark it as containing a secret value. Anthropic API use may be chargeable. You can leave this unset to avoid AI usage charges: **Generate proposal draft** will still create and save a tailored, no-cost structured draft from the selected opportunity and saved company profile, including a requirement-to-response checklist and explicit evidence placeholders. This deterministic template draft is not generative AI and must be completed and verified by a human. Public-source tender discovery does not use this key.
-7. Re-run the updated [`supabase/setup.sql`](supabase/setup.sql) so the source fields and daily-discovery history table exist. Then redeploy after setting variables.
-8. The `discover-tenders` scheduled function runs daily at midnight UTC (03:00 East Africa Time). It calls two public, no-key procurement data sources: the TED public notices API and the UK Find a Tender OCDS feed. It applies deterministic capability-keyword screening (no AI), rejects expired deadlines, deduplicates by source URL, and saves matching records to Supabase. On sign-in, the dashboard loads these saved opportunities into **Fresh opportunity signals** and the opportunity pipeline, so the latest completed scan is visible when staff open the workspace. Older records remain in the pipeline for review. This is not a whole-web crawler: TED mainly covers European notices and Find a Tender covers UK notices, and neither guarantees that an East African supplier is eligible. Coverage is limited and search feeds may omit notices; verify each original buyer notice, eligibility, deadline and registration requirement. Google Search remains a separate manual search link, not an API feed.
-9. Sign in as the owner. Open **Team access → Invite a team member** to add staff (`Staff`) or project managers (`Project manager`). Only the owner can grant project-manager access; managers can invite staff and manage staff accounts. Existing owner accounts are protected from changes in the UI.
-10. Use **Portfolio report → Download workspace backup** to save a JSON copy of workspace records, proposals, milestones, team roster, discovery runs and activity to the current device. This export is available to owners/managers; store it securely. The shared Supabase workspace remains the system of record.
+5. Add `ANTHROPIC_API_KEY` as a Netlify secret to enable Enterprise AI proposal and learning drafts. Usage may be billable. AI output is a draft and requires a human evidence review.
+6. Configure Stripe to send signed `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted` events to `https://YOUR-SITE/api/index.php?route=stripe-webhook`. Verify a test-mode transaction and webhook signature before enabling live checkout.
+7. Configure M-Pesa Daraja callbacks to the same site's `/api/index.php?route=mpesa-callback`; the app verifies callback amount and receipt and performs a server-to-server STK query before activation. Test in sandbox. M-Pesa renewals are customer-initiated, not recurring autopay.
+8. Configure Resend with a verified sender; otherwise support requests remain stored but cannot be emailed, and reminder messages are not delivered. Reminders use the scheduled `billing-maintenance` function, which also pauses expired subscriptions.
+9. Redeploy after setting variables. Customers create accounts themselves, confirm email if configured, select a plan, then complete company evidence onboarding. Their first seven trial days begin at registration.
+10. Owners can invite staff and project managers from **Team access**. Use **Portfolio report → Download workspace backup** to save a JSON backup; keep it secure.
+11. The `discover-tenders` scheduled function runs daily at 00:00 UTC (03:00 East Africa Time), querying TED and UK Find a Tender. It screens each completed company profile separately. It is not a whole-web crawler, and Google Search is a manual link, not an API feed.
 
 Generate a rate-limit key with a trusted local password manager or a cryptographically secure local generator. Keep it and the Supabase service-role key only in Netlify's protected environment-variable store. Rotate either key if it is exposed.
 
 ## Access controls and data boundaries
 
-- Serverless routes validate Supabase Auth access tokens and check each user against `bid_users`. Inactive or unlisted Auth accounts are denied.
+- Serverless routes validate Supabase Auth access tokens and check each user against `bid_users`, workspace activity and subscription state. Expired workspaces cannot read their workspace records; billing routes remain available to the owner to restore access.
 - Only authenticated owners/managers can list and invite team members. Only the owner can assign manager access; managers can invite staff only. Owner records and an administrator's own access cannot be changed through the staff UI.
-- Invitation requests use Supabase Admin Auth on the server with the service-role key; password setup stays with the invitee. Public account creation remains disabled. Deactivation blocks BidOps access without deleting the user's Auth record or audit history.
-- Database reads and writes use the service key only inside Netlify Functions. The included SQL enables RLS, revokes direct `anon`/`authenticated` access, and grants app-table access only to `service_role`.
+- Customer self-registration uses Supabase Auth; staff invitations use Supabase Admin Auth on the server. Passwords are never stored by BidOps. Workspace deactivation by the NEXA platform administrator is reversible and retains the data and audit history.
+- Cross-customer account lists and controls require an explicit `nexa_platform_admins` record. The first master owner is established only with the one-time setup key. Platform changes are recorded in the platform-admin audit log.
+- Signup, support enquiries, trial status, subscription changes, payment attempts, return-customer state and consent timestamps are stored in Supabase. Marketing opt-in is optional; the platform console exports only opted-in contacts. Support requests do not imply marketing consent.
+- Database reads and writes use the service key only inside Netlify Functions. The included SQL enables RLS, revokes direct `anon`/`authenticated` access, and grants app-table access only to `service_role`. API queries, exports, invitations, audit events and scheduled discovery filter by `organization_id`; customer data is not isolated by UI filtering alone.
 - Login attempts are limited using an atomic, HMAC-keyed 15-minute counter in Postgres. API writes validate fields and role permissions; significant actions are audited. Daily discovery runs and their outcomes are saved in Postgres.
+- Stripe webhook signatures are checked before activating card subscriptions. M-Pesa callbacks are matched to a pending checkout, amount and receipt, then verified with Daraja's STK query API before activation. Never use live billing until sandbox tests pass and Netlify variables are set.
+- `billing-maintenance` sends transactional renewal/trial messages and pauses expired access. Marketing campaigns are not sent by BidOps; use only the CSV contacts with explicit opt-in and honor unsubscribe requests.
 - Live session/refresh tokens stay in the current browser tab's `sessionStorage`. HTTPS is provided by Netlify; the deploy sets HSTS, CSP, frame, and MIME protections.
-- AI proposal drafting sends the required opportunity/company context to Anthropic only when its API key is configured. Public-source tender screening does not send workspace data to an AI service. Do not send sensitive information unless its use is authorized and consistent with your organization's policies.
+- Enterprise AI proposal and learning drafts send the relevant company/opportunity context and any retrospective notes to Anthropic only when its API key is configured. Public-source tender screening does not send workspace data to an AI service. Do not send sensitive information unless its use is authorized and consistent with your organization's policies. Learning drafts require human approval.
+- There is no live Gmail/Outlook/MCP connector in this build. Timeline communication entries are manually recorded and do not read inboxes, send buyer emails or verify replies.
 - Set Supabase Auth password, invite, recovery, region, backup and retention policies to your organisation's requirements. Give the service role key only to the API Functions environment.
 - The scheduled scan is a limited integration with TED and the UK Find a Tender OCDS feed, not a whole-web crawler or a direct integration with Google, UNGM, TendersKenya, UNjobs or every buyer portal. Verify the official notice, supplier eligibility, deadline, claims and pricing before submission. No proposal can guarantee an award.
 
 ## Troubleshooting
 
 - **AI drafting is not configured?** Add `ANTHROPIC_API_KEY` as a Netlify secret, then redeploy.
+- **Cards do not open?** Configure `STRIPE_SECRET_KEY` and the signed webhook endpoint/secret; check Stripe test-mode logs.
+- **M-Pesa does not open?** Configure Daraja credentials, approved shortcode/passkey, KES prices and callback token; test using `MPESA_ENVIRONMENT=sandbox`.
+- **Trial emails are missing?** Configure a verified `NEXA_EMAIL_FROM`, `RESEND_API_KEY`, and `NEXA_SITE_URL`; check the `billing-maintenance` scheduled-function logs.
+- **Cannot access the platform console?** Sign in with an active workspace owner account, then use the one-time `NEXA_PLATFORM_SETUP_KEY` only if no platform admin has been created. Remove the key from Netlify after first setup.
 - **No daily discovery results?** Confirm the updated SQL ran successfully, the `SUPABASE_URL` and service-role key point to the same project, and the `discover-tenders` Function logs show a completed run. The scan does not require `ANTHROPIC_API_KEY`; it runs at 00:00 UTC and may find no matching current notices. A partial source outage is shown in the discovery-run record.
 - **`Deploy directory 'site' does not exist`?** Netlify is building from the wrong base directory or the ZIP/parent directory was uploaded as a manual deploy. For Git/CLI builds, set the base to the folder containing `netlify.toml` and confirm `site/index.html` exists beneath it. For a manual deploy, extract the ZIP and deploy the contents of its `site` folder; do not use the project-source ZIP as the publish folder.
 - **`Could not be authorised` / missing BidOps access?** Confirm the auth email belongs to an active `bid_users` row and the role is `owner`, `manager` or `writer`.

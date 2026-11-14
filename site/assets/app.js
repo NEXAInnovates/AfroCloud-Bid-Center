@@ -8,9 +8,11 @@
     csrf: "",
     user: null,
     profile: null,
+    subscription: null,
     opportunities: [],
     projects: [],
     proposals: [],
+    learnings: [],
     activity: [],
     users: [],
     latestDiscovery: null,
@@ -34,6 +36,7 @@
     ["Lost", "Lost"],
     ["NoGo", "No-go"],
   ];
+  state.learnings = [];
   var pageNames = {
     dashboard: "Executive brief",
     opportunities: "Opportunity radar",
@@ -42,6 +45,7 @@
     proposal: "Proposal studio",
     interview: "Interview room",
     delivery: "Project launch",
+    learnings: "Learning review",
     profile: "Company evidence",
     team: "Team access",
   };
@@ -82,7 +86,7 @@
     { tag: "FREE SEARCH", name: "Google Search", domain: "google.com", url: "https://www.google.com/", access: "Free", kind: "Search engine", relevance: "Best flexible discovery tool. Searches official procurement sites, PDFs, donor portals and cached notice pages.", caution: "Search results are not a validated tender feed; confirm current status on the buyer portal." },
     { tag: "FREE SEARCH", name: "Bing Search", domain: "bing.com", url: "https://www.bing.com/", access: "Free", kind: "Search engine", relevance: "A useful second index for procurement pages, framework notices and document attachments.", caution: "Search results may be stale or duplicated; verify each notice at source." },
     { tag: "AUTOMATED · FREE API", name: "TED public procurement notices", domain: "ted.europa.eu", url: "https://ted.europa.eu/en/", access: "Daily API scan enabled · no search key", kind: "Official procurement", relevance: "Published European public procurement notices are checked daily for learning, digital, cloud, cybersecurity and programme-delivery fit.", caution: "TED primarily covers European notices; confirm geographic eligibility and the buyer's original notice." },
-    { tag: "AUTOMATED · FREE FEED", name: "UK Find a Tender", domain: "find-tender.service.gov.uk", url: "https://www.find-tender.service.gov.uk/Search", access: "Daily OCDS feed scan enabled · no search key", kind: "Official procurement", relevance: "UK public tender releases are checked daily against AfroCloud capability terms.", caution: "UK notices may be restricted to UK suppliers or require local delivery; verify eligibility before bidding." },
+    { tag: "AUTOMATED · FREE FEED", name: "UK Find a Tender", domain: "find-tender.service.gov.uk", url: "https://www.find-tender.service.gov.uk/Search", access: "Daily OCDS feed scan enabled · no search key", kind: "Official procurement", relevance: "UK public tender releases are checked against each workspace’s capabilities, keywords, sectors and target markets.", caution: "UK notices may be restricted to UK suppliers or require local delivery; verify eligibility before bidding." },
     { tag: "OFFICIAL · UN", name: "UN Global Marketplace (UNGM)", domain: "ungm.org", url: "https://www.ungm.org/Public/Notice", access: "Free search · vendor requirements vary", kind: "Official procurement", relevance: "UN agency RFPs, RFQs, EOIs, consultancy and partner calls. Filter by opportunity type and beneficiary country.", caution: "Register the legal entity and verify each agency's eligibility and vendor requirements." },
     { tag: "OFFICIAL · UN", name: "UNDP Procurement Notices", domain: "procurement-notices.undp.org", url: "https://procurement-notices.undp.org/", access: "Free", kind: "Official procurement", relevance: "Search active UNDP RFP/RFQ notices by country and document title; service and consulting categories often suit knowledge work.", caution: "Screen out goods, works and individual-contractor posts that do not fit a company bid." },
     { tag: "OFFICIAL · MDB", name: "World Bank Project Procurement", domain: "projects.worldbank.org", url: "https://projects.worldbank.org/en/projects-operations/procurement", access: "Free · email alerts", kind: "Official procurement", relevance: "Current opportunities and alerts for World Bank-financed borrower projects; filter for consulting, education, digital, ICT and training services.", caution: "Many notices are issued by borrower agencies; follow the linked country procurement documents." },
@@ -111,7 +115,6 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
     });
   }
-
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
   }
@@ -119,17 +122,19 @@
   function previewRequest(route, options) {
     options = options || {};
     var method = options.method || "GET";
-    var id = options.id || 0;
+    var id = String(options.id || "");
     var body = options.body || {};
     var item;
-    if (route === "login") throw new Error("Use Open interactive preview to enter preview mode.");
+    if (route === "login") throw new Error("Sign-in is disabled in this browser-only preview.");
     if (route === "bootstrap") {
       return {
         ok: true, mode: "preview", user: state.user, csrf: "",
         profile: clone(state.profile),
+        subscription: clone(state.subscription),
         opportunities: clone(state.opportunities),
         projects: clone(state.projects),
         proposals: clone(state.proposals),
+        learnings: clone(state.learnings),
         activity: clone(state.activity),
         users: clone(state.users),
         latest_discovery: null,
@@ -140,7 +145,7 @@
         ok: true,
         format_version: 1,
         exported_at: new Date().toISOString(),
-        workspace: "AfroCloud BidOps preview",
+        workspace: "NEXA BidOps preview",
         data: {
           company_profile: clone(state.profile ? [state.profile] : []),
           opportunities: clone(state.opportunities),
@@ -178,10 +183,44 @@
       return { ok: true, user: clone(item) };
     }
     if (route === "logout") return { ok: true };
+    if (route === "subscription" && method === "GET") return { ok: true, subscription: clone(state.subscription) };
+    if (route === "subscription" && method === "PATCH") {
+      state.subscription = Object.assign({}, state.subscription, { plan: body.plan });
+      return { ok: true, subscription: clone(state.subscription) };
+    }
     if (route === "profile" && method === "PUT") {
+      if (!(body.capabilities || []).length || !(body.preferred_keywords || []).length ||
+          (!(body.preferred_countries || []).length && !(body.preferred_sectors || []).length)) {
+        throw new Error("Add at least one capability, search keyword, and target market or sector to finish your profile.");
+      }
       state.profile = Object.assign({}, state.profile, clone(body));
+      state.profile.onboarding_complete = true;
+      state.opportunities.forEach(function (opportunity) {
+        var match = profileMatch(opportunity, state.profile);
+        opportunity.fit_score = match.score;
+        opportunity.fit_json = match;
+      });
       state.activity.unshift({ action: "update", entity_type: "company_profile", entity_id: 1, display_name: state.user.display_name, created_at: new Date().toISOString() });
       return { ok: true, profile: clone(state.profile) };
+    }
+    if (route === "activity" && method === "POST") {
+      var activity = {
+        action: "timeline_event",
+        entity_type: "timeline",
+        entity_id: String(body.opportunity_id),
+        user_id: state.user.id,
+        display_name: state.user.display_name,
+        created_at: new Date().toISOString(),
+        detail_json: {
+          event_type: body.event_type,
+          summary: body.summary,
+          contact: body.contact || "",
+          details: body.details || "",
+          opportunity_id: String(body.opportunity_id),
+        },
+      };
+      state.activity.unshift(activity);
+      return { ok: true, activity: clone(activity) };
     }
     if (route === "opportunities" && method === "POST") {
       item = Object.assign({
@@ -196,6 +235,8 @@
         fit_score: 38,
         fit_json: { matched: ["Digital learning content"], review: [], basis: "Keyword screening only. Confirm mandatory eligibility and evidence manually." },
       }, clone(body));
+      item.fit_json = profileMatch(item, state.profile);
+      item.fit_score = item.fit_json.score;
       state.opportunities.unshift(item);
       state.activity.unshift({ action: "create", entity_type: "opportunity", entity_id: item.id, display_name: state.user.display_name, created_at: new Date().toISOString() });
       return { ok: true, opportunity: clone(item) };
@@ -203,18 +244,26 @@
     if (route === "opportunity" && method === "PATCH") {
       item = opportunityById(id);
       if (!item) throw new Error("Opportunity not found.");
+      var previousStage = item.stage;
       Object.assign(item, clone(body));
-      state.activity.unshift({ action: "update", entity_type: "opportunity", entity_id: item.id, display_name: state.user.display_name, created_at: new Date().toISOString() });
+      state.activity.unshift({
+        action: body.stage ? "stage_change" : "update",
+        entity_type: "opportunity",
+        entity_id: item.id,
+        detail_json: body.stage ? { from: previousStage, to: item.stage } : {},
+        display_name: state.user.display_name,
+        created_at: new Date().toISOString(),
+      });
       return { ok: true, opportunity: clone(item) };
     }
     if (route === "proposal" && method === "GET") {
-      item = state.proposals.find(function (proposal) { return Number(proposal.opportunity_id) === id; });
+      item = state.proposals.find(function (proposal) { return String(proposal.opportunity_id) === id; });
       return { ok: true, proposal: item ? clone(item) : null };
     }
     if (route === "proposal" && method === "POST") {
       item = opportunityById(id);
       if (!item) throw new Error("Opportunity not found.");
-      var existing = state.proposals.find(function (proposal) { return Number(proposal.opportunity_id) === id; });
+      var existing = state.proposals.find(function (proposal) { return String(proposal.opportunity_id) === id; });
       if (Array.isArray(body.sections)) {
         if (!existing) existing = { id: id, opportunity_id: id, status: "Draft", opportunity_title: item.title };
         existing.sections_json = clone(body.sections);
@@ -236,16 +285,16 @@
           ],
         };
       }
-      if (!state.proposals.some(function (proposal) { return Number(proposal.opportunity_id) === id; })) state.proposals.push(existing);
+      if (!state.proposals.some(function (proposal) { return String(proposal.opportunity_id) === id; })) state.proposals.push(existing);
       else if (existing) {
-        var index = state.proposals.findIndex(function (proposal) { return Number(proposal.opportunity_id) === id; });
+        var index = state.proposals.findIndex(function (proposal) { return String(proposal.opportunity_id) === id; });
         state.proposals[index] = existing;
       }
       state.activity.unshift({ action: "edit", entity_type: "proposal", entity_id: id, display_name: state.user.display_name, created_at: new Date().toISOString() });
       return { ok: true, sections: clone(existing.sections_json) };
     }
     if (route === "proposal" && method === "PATCH") {
-      item = state.proposals.find(function (proposal) { return Number(proposal.opportunity_id) === id; });
+      item = state.proposals.find(function (proposal) { return String(proposal.opportunity_id) === id; });
       if (!item) throw new Error("Proposal draft not found.");
       item.status = body.status;
       return { ok: true, status: item.status };
@@ -262,7 +311,7 @@
         ["How will you deliver " + ((item.fit_json && item.fit_json.matched && item.fit_json.matched[0]) || "the proposed approach") + " in this context?", "Describe the method, a verified example, quality checks, local/user considerations and evidence you can show."],
         ["What do you need from the buyer in the first 30 days?", "State the decisions, access, subject-matter input, data and approvals needed, who supplies them and the risk of delay."],
       ].map(function (question) { return { question: question[0], framework: question[1] }; });
-      var savedProposal = state.proposals.find(function (proposal) { return Number(proposal.opportunity_id) === id; });
+      var savedProposal = state.proposals.find(function (proposal) { return String(proposal.opportunity_id) === id; });
       if (savedProposal) savedProposal.interview_json = clone(questions);
       state.activity.unshift({ action: "prepare", entity_type: "interview", entity_id: id, display_name: state.user.display_name, created_at: new Date().toISOString() });
       return { ok: true, questions: questions };
@@ -270,7 +319,7 @@
     if (route === "project" && method === "POST") {
       item = opportunityById(id);
       if (!item || item.stage !== "Won") throw new Error("Mark an opportunity Won after award confirmation before creating its launch plan.");
-      var project = state.projects.find(function (value) { return Number(value.opportunity_id) === id; });
+      var project = state.projects.find(function (value) { return String(value.opportunity_id) === id; });
       if (!project) {
         project = {
           id: id, opportunity_id: id, opportunity_title: item.title, funder: item.funder,
@@ -288,7 +337,7 @@
     if (route === "milestone" && method === "PATCH") {
       var milestone;
       state.projects.some(function (project) {
-        milestone = project.milestones.find(function (value) { return Number(value.id) === id; });
+        milestone = project.milestones.find(function (value) { return String(value.id) === id; });
         return Boolean(milestone);
       });
       if (!milestone) throw new Error("Milestone not found.");
@@ -331,6 +380,7 @@
           if (response.status === 401 && route !== "login") {
             signInRequired();
           }
+          if (response.status === 402) openPlanScreen(data.error || "Choose a plan to restore workspace access.");
           throw new Error(data.error || "The request could not be completed.");
         }
         return data;
@@ -437,11 +487,56 @@
 
   function fitMarkup(score) {
     var value = Math.max(0, Math.min(100, Number(score || 0)));
-    return '<span class="fit-line">Screening signal <span class="fit-bar"><i style="width:' + value + '%"></i></span><b>' + value + "</b></span>";
+    return '<span class="fit-line">Profile match <span class="fit-bar"><i style="width:' + value + '%"></i></span><b>' + value + "%</b></span>";
+  }
+
+  function profileMatch(opportunity, profile) {
+    var searchable = [
+      opportunity.title, opportunity.requirements, opportunity.sector,
+      opportunity.country, opportunity.funder_type, opportunity.funder,
+    ].join(" ").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    var stopWords = ["with", "from", "into", "that", "this", "your", "their", "about", "service", "services", "solution", "solutions", "support", "system", "systems"];
+    function matches(item) {
+      var phrase = String(item || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!phrase) return false;
+      if ((" " + searchable + " ").indexOf(" " + phrase + " ") !== -1) return true;
+      var words = phrase.split(" ").filter(function (word) { return word.length > 3 && stopWords.indexOf(word) === -1; });
+      if (!words.length) return false;
+      var hits = words.filter(function (word) { return searchable.indexOf(word) !== -1; }).length;
+      return hits >= Math.max(1, Math.ceil(words.length * 0.6));
+    }
+    var dimensions = [];
+    var matched = [];
+    var missing = [];
+    function add(label, items, weight) {
+      var values = Array.isArray(items) ? items.filter(Boolean) : [];
+      if (!values.length) return;
+      var hits = values.filter(matches);
+      dimensions.push({ label: label, matched: hits.length, total: values.length, weight: weight, score: Math.round(hits.length / values.length * 100) });
+      matched = matched.concat(hits.map(function (item) { return label + ": " + item; }));
+      missing = missing.concat(values.filter(function (item) { return hits.indexOf(item) === -1; }).map(function (item) { return label + ": " + item; }));
+    }
+    add("Capability", profile.capabilities, 45);
+    add("Search term", profile.preferred_keywords, 20);
+    add("Sector", profile.preferred_sectors, 15);
+    add("Target market", profile.preferred_countries, 10);
+    add("Buyer type", profile.preferred_buyer_types, 10);
+    var weight = dimensions.reduce(function (total, item) { return total + item.weight; }, 0);
+    var score = weight ? Math.round(dimensions.reduce(function (total, item) { return total + item.score * item.weight; }, 0) / weight) : 0;
+    var review = missing.length ? ["Profile criteria not found in the captured notice: " + missing.slice(0, 5).join(", ") + "."] : [];
+    review.push("This profile-alignment score is not a supplier eligibility, compliance, or award prediction.");
+    return {
+      score: score,
+      matched: matched,
+      missing: missing,
+      dimensions: dimensions,
+      review: review,
+      basis: "Weighted keyword alignment to this organization profile. Verify the complete notice and mandatory eligibility manually.",
+    };
   }
 
   function opportunityById(id) {
-    return state.opportunities.find(function (item) { return Number(item.id) === Number(id); });
+    return state.opportunities.find(function (item) { return String(item.id) === String(id); });
   }
 
   function filteredOpportunities() {
@@ -484,7 +579,97 @@
   }
 
   function openOpportunityButton(id) {
-    return '<button class="row-action" data-open-opportunity="' + Number(id) + '">Open →</button>';
+    return '<button class="row-action" data-open-opportunity="' + escapeHtml(id) + '">Open →</button>';
+  }
+
+  function activityTitle(item) {
+    var detail = item.detail_json || {};
+    var eventTitles = {
+      email_sent: "Email sent",
+      email_response_received: "Response received via email",
+      vendor_update_sent: "Email update sent to vendor",
+      confirmation_received: "Confirmation received",
+      project_started: "Project started",
+      project_update_sent: "Project update sent",
+      meeting_held: "Meeting completed",
+      other_note: "Activity note",
+    };
+    if (item.action === "timeline_event") return eventTitles[detail.event_type] || "Activity recorded";
+    if (item.action === "auto_discover") return "Opportunity found";
+    if (item.action === "create" && item.entity_type === "opportunity") return "Opportunity found";
+    if (["generate", "edit"].includes(item.action) && item.entity_type === "proposal") {
+      return item.action === "generate" ? "Bid created" : "Bid updated";
+    }
+    if (item.action === "stage_change") return "Bid stage updated · " + stageLabel(detail.to || "");
+    if (item.action === "launch_plan") return "Project launch plan created";
+    if (item.action === "update" && item.entity_type === "milestone") return "Project milestone updated";
+    if (item.action === "invite") return "Team member invited";
+    if (item.entity_type === "organization_profile") return "Company profile updated";
+    if (item.action === "update" && item.entity_type === "opportunity") return "Opportunity updated";
+    return "";
+  }
+
+  function activityTimeline(limit) {
+    var timeline = (state.activity || []).map(function (item) {
+      var detail = item.detail_json || {};
+      var title = activityTitle(item);
+      var opportunityId = detail.opportunity_id || (["opportunity", "proposal", "interview", "timeline"].includes(item.entity_type) ? item.entity_id : "");
+      var opportunity = opportunityById(opportunityId);
+      return { item: item, detail: detail, title: title, opportunity: opportunity };
+    }).filter(function (entry) { return entry.title; })
+      .sort(function (a, b) { return String(b.item.created_at || "").localeCompare(String(a.item.created_at || "")); })
+      .slice(0, limit);
+    if (!timeline.length) {
+      return emptyState("Your timeline starts with the first move", "Opportunity discoveries, bid decisions, drafts, communication logs and delivery milestones will appear here.");
+    }
+    return '<div class="activity-timeline">' + timeline.map(function (entry) {
+      var item = entry.item;
+      var detail = entry.detail;
+      var date = new Date(item.created_at || "");
+      var timestamp = Number.isNaN(date.getTime()) ? "Time not recorded" :
+        date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      var description = detail.summary || detail.fit_reason || detail.to && ("Moved from " + stageLabel(detail.from || "") + " to " + stageLabel(detail.to)) ||
+        (entry.opportunity ? entry.opportunity.funder : "Workspace activity");
+      var extra = [detail.contact, detail.details].filter(Boolean).join(" · ");
+      var icon = item.action === "timeline_event" ? "↗" :
+        item.entity_type === "opportunity" ? "⌕" : item.entity_type === "proposal" ? "✳" :
+          item.entity_type === "project" || item.entity_type === "milestone" ? "▣" : "•";
+      return '<article class="timeline-entry"><span class="timeline-marker">' + icon + '</span><div class="timeline-main"><div class="timeline-topline"><b>' +
+        escapeHtml(entry.title) + '</b><time>' + escapeHtml(timestamp) + '</time></div><p>' + escapeHtml(description) + '</p>' +
+        (extra ? '<small>' + escapeHtml(extra) + '</small>' : "") +
+        (entry.opportunity ? '<button class="row-action timeline-open" data-open-opportunity="' + escapeHtml(entry.opportunity.id) + '">' +
+          escapeHtml(entry.opportunity.title) + ' ↗</button>' : "") +
+        '<small class="timeline-actor">' + escapeHtml(item.display_name || "Workspace user") + "</small></div></article>";
+    }).join("") + "</div>";
+  }
+
+  function activityForm() {
+    if (!state.opportunities.length) {
+      notify("Capture an opportunity before logging activity.", true);
+      return;
+    }
+    showModal('<span class="eyebrow">KEEP THE STORY CURRENT</span><h2 id="modalTitle">Log timeline activity</h2><p class="modal-intro">Record a real communication or project milestone against an opportunity.</p>' +
+      '<div class="callout"><strong>Manual activity log.</strong> This records what your team says happened. It does not send emails, read inboxes, or verify a reply.</div>' +
+      '<form id="activityForm"><div class="form-two"><div class="form-field"><label for="activityType">EVENT *</label><select id="activityType" name="event_type" class="select" required>' +
+      '<option value="email_sent">Email sent</option><option value="email_response_received">Response received via email</option><option value="vendor_update_sent">Email update sent to vendor</option><option value="confirmation_received">Confirmation received</option><option value="project_started">Project started</option><option value="project_update_sent">Project update sent</option><option value="meeting_held">Meeting completed</option><option value="other_note">Activity note</option></select></div>' +
+      '<div class="form-field"><label for="activityOpportunity">RELATED OPPORTUNITY *</label><select id="activityOpportunity" name="opportunity_id" class="select" required><option value="">Select an opportunity</option>' +
+      state.opportunities.map(function (item) { return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.title) + "</option>"; }).join("") +
+      '</select></div></div><div class="form-field"><label for="activitySummary">WHAT HAPPENED? *</label><input id="activitySummary" name="summary" class="field" maxlength="240" required placeholder="e.g. Buyer confirmed receipt of the proposal"></div>' +
+      '<div class="form-field"><label for="activityContact">CONTACT / ORGANIZATION</label><input id="activityContact" name="contact" class="field" maxlength="190" placeholder="Buyer contact or vendor"></div>' +
+      '<div class="form-field"><label for="activityDetails">NOTES</label><textarea id="activityDetails" name="details" class="textarea" maxlength="2000" placeholder="Next action, owner or confirmation reference"></textarea></div>' +
+      '<div id="activityFormError" class="form-error" role="alert"></div><div class="modal-actions"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button button-primary" type="submit">Add to timeline →</button></div></form>');
+  }
+
+  function supportForm() {
+    showModal('<span class="eyebrow">NEXA CUSTOMER CARE</span><h2 id="modalTitle">Contact support</h2><p class="modal-intro">Tell us what happened. Urgent requests are sent to the NEXA support inbox.</p>' +
+      '<form id="supportForm"><div class="form-two"><div class="form-field"><label for="supportName">YOUR NAME *</label><input id="supportName" class="field" name="name" required maxlength="120" autocomplete="name" value="' +
+      escapeHtml(state.user && state.user.display_name || "") + '"></div><div class="form-field"><label for="supportEmail">EMAIL *</label><input id="supportEmail" class="field" type="email" name="email" required maxlength="254" autocomplete="email" value="' +
+      escapeHtml(state.user && state.user.username || "") + '"></div></div><div class="form-field"><label for="supportPhone">PHONE (OPTIONAL)</label><input id="supportPhone" class="field" name="phone" maxlength="32" autocomplete="tel"></div>' +
+      '<div class="form-field"><label for="supportSubject">SUBJECT *</label><input id="supportSubject" class="field" name="subject" required maxlength="160" placeholder="How can we help?"></div>' +
+      '<div class="form-field"><label for="supportMessage">MESSAGE *</label><textarea id="supportMessage" class="textarea" name="message" required maxlength="4000" placeholder="Include what you were trying to do and any error message."></textarea></div>' +
+      '<label class="consent-option"><input name="marketing_consent" type="checkbox" value="true"> I would also like occasional product and service updates. Optional.</label>' +
+      '<div id="supportError" class="form-error" role="alert"></div><div class="modal-actions"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button button-primary" type="submit">Send to NEXA support →</button></div></form>' +
+      '<p class="auth-support">Emergency email: <a href="mailto:nexainnovates@gmail.com">nexainnovates@gmail.com</a></p>');
   }
 
   function renderDashboard() {
@@ -543,10 +728,27 @@
         (state.latestDiscovery.error_message ? " · source warning" : "")
       : "Daily public-source scan not run yet";
     var topAction = state.user && (state.user.role === "owner" || state.user.role === "manager")
-      ? '<button class="button button-primary" data-action="new-opportunity">＋ Capture opportunity</button>' : "";
+      ? '<button class="button" data-action="log-activity">＋ Log activity</button><button class="button button-primary" data-action="new-opportunity">＋ Capture opportunity</button>' : "";
+    var reminder = "";
+    if (state.subscription && state.subscription.status === "trialing" && state.subscription.trial_ends_at) {
+      var daysRemaining = Math.ceil((Date.parse(state.subscription.trial_ends_at) - Date.now()) / 86400000);
+      if (daysRemaining <= 3) {
+        reminder = '<div class="billing-reminder"><div><b>' +
+          (daysRemaining <= 0 ? "Your free trial has ended." : "Your free trial ends in " + daysRemaining + (daysRemaining === 1 ? " day." : " days.")) +
+          '</b><span>Choose a plan to keep your opportunities, proposals and project history available.</span></div><button class="button button-primary" data-action="manage-plan">Review plans →</button></div>';
+      }
+    } else if (state.subscription && state.subscription.status === "active" && state.subscription.current_period_end) {
+      var billingDaysRemaining = Math.ceil((Date.parse(state.subscription.current_period_end) - Date.now()) / 86400000);
+      if (billingDaysRemaining <= 3 && billingDaysRemaining >= 0 && state.subscription.provider === "mpesa") {
+        reminder = '<div class="billing-reminder"><div><b>Your M-Pesa subscription period ends in ' +
+          billingDaysRemaining + (billingDaysRemaining === 1 ? " day." : " days.") +
+          '</b><span>Renew from Manage plan to keep this workspace active. M-Pesa renewals are not automatic.</span></div><button class="button button-primary" data-action="manage-plan">Renew plan →</button></div>';
+      }
+    }
 
     document.getElementById("view-dashboard").innerHTML =
       pageHead("CEO / PROJECT MANAGER · COMMAND VIEW", "A clearer path from signal to impact.", "Your bid portfolio, the next decision and launch readiness — in one private workspace.", topAction) +
+      reminder +
       '<div class="stat-grid">' +
       '<article class="stat-card"><div class="stat-top"><span>OPEN OPPORTUNITIES</span><span class="stat-icon">⌕</span></div><div class="stat-value">' + s.open.length +
       '</div><div class="stat-foot">Live records in the decision funnel</div></article>' +
@@ -560,6 +762,8 @@
       '<article class="panel"><div class="panel-head"><div><h2 class="panel-title">Fresh opportunity signals</h2><p class="panel-sub">' +
       escapeHtml(discoveryStatus) + '</p></div><button class="text-link" data-nav="opportunities">All sources →</button></div><div class="panel-body"><div class="opportunity-list">' +
       signalContent + '</div><p class="panel-sub">Keyword-screened public notices are not verified eligibility decisions. Check the original notice before committing bid effort.</p></div></article>' +
+      '<article class="panel activity-panel"><div class="panel-head"><div><h2 class="panel-title">The work in motion</h2><p class="panel-sub">A live story of discoveries, decisions, communication and delivery.</p></div><button class="text-link" data-nav="reports">Full portfolio timeline →</button></div><div class="panel-body">' +
+      activityTimeline(8) + '</div></article>' +
       '<div class="dashboard-grid"><div class="column-stack">' +
       '<article class="panel"><div class="panel-head"><div><h2 class="panel-title">Decision room</h2><p class="panel-sub">The bids that need a clear Go / No-Go call</p></div><button class="text-link" data-nav="opportunities">View radar →</button></div><div class="opportunity-list">' +
       decisionContent + '</div></article>' +
@@ -576,10 +780,17 @@
   function sourceSearchUrl(source, engine) {
     var group = sourceKeywordGroups[state.sourceCapability] || sourceKeywordGroups.learning;
     var market = sourceMarkets[state.sourceMarket] || sourceMarkets.east;
-    var terms = "(" + group.terms.join(" OR ") + ")";
+    var profileTerms = (state.profile && state.profile.preferred_keywords || [])
+      .concat(state.profile && state.profile.capabilities || [])
+      .concat(state.profile && state.profile.preferred_sectors || [])
+      .filter(Boolean).slice(0, 8).map(function (term) { return '"' + String(term).replace(/"/g, "") + '"'; });
+    var terms = "(" + Array.from(new Set(profileTerms.concat(group.terms))).join(" OR ") + ")";
+    var profileMarkets = (state.profile && state.profile.preferred_countries || []).filter(Boolean)
+      .slice(0, 8).map(function (country) { return '"' + String(country).replace(/"/g, "") + '"'; });
+    var marketTerms = profileMarkets.length ? "(" + profileMarkets.join(" OR ") + " OR " + market.terms + ")" : market.terms;
     var adjacent = source.kind === "Employment listings" || source.kind === "Context / jobs";
     var query = (engine || source.domain === "google.com" || source.domain === "bing.com" ? "" : "site:" + source.domain + " ") +
-      terms + " (" + market.terms + ")" + (adjacent ? "" : " " + tenderTerms + " " + exclusions);
+      terms + " " + marketTerms + (adjacent ? "" : " " + tenderTerms + " " + exclusions);
     var base = engine === "bing" || source.domain === "bing.com" ? "https://www.bing.com/search?q=" : "https://www.google.com/search?q=";
     return base + encodeURIComponent(query);
   }
@@ -587,6 +798,11 @@
   function sourceCards() {
     var group = sourceKeywordGroups[state.sourceCapability] || sourceKeywordGroups.learning;
     var market = sourceMarkets[state.sourceMarket] || sourceMarkets.east;
+    var profileTerms = (state.profile && state.profile.preferred_keywords || [])
+      .concat(state.profile && state.profile.capabilities || [])
+      .concat(state.profile && state.profile.preferred_sectors || [])
+      .filter(Boolean).slice(0, 8).map(function (term) { return '"' + String(term).replace(/"/g, "") + '"'; });
+    var displayedTerms = Array.from(new Set(profileTerms.concat(group.terms)));
     var cards = sourceDirectory.map(function (source) {
       var queryUrl = sourceSearchUrl(source);
       var directLink = source.kind === "Search engine" ? queryUrl : source.url;
@@ -606,10 +822,10 @@
         return '<option value="' + key + '"' + (state.sourceMarket === key ? " selected" : "") + ">" + escapeHtml(sourceMarkets[key].label) + "</option>";
       }).join("") + '</select></label><a class="button button-small" href="' + escapeHtml(sourceSearchUrl({ domain: "google.com", kind: "Search engine" }, "google")) +
       '" target="_blank" rel="noopener noreferrer">Run Google search ↗</a></div>' +
-      '<div class="keyword-list"><b>KEYWORDS INCLUDED</b>' + group.terms.map(function (term) {
+      '<div class="keyword-list"><b>KEYWORDS INCLUDED</b>' + displayedTerms.map(function (term) {
         return '<span class="keyword-chip">' + escapeHtml(term) + "</span>";
       }).join("") + '</div><div class="callout source-query"><strong>Search recipe:</strong> ' + escapeHtml(group.label) + " + " + escapeHtml(market.label) +
-      ' + RFP / tender / procurement / EOI / consultancy. Poor-fit exclusions: civil/building works, vehicles, catering, office supplies, computer/tablet-only supply and printing. <b>The scheduled free-source scan checks the TED API and UK Find a Tender feed daily, matches notice text to AfroCloud capabilities, and saves candidates to this radar. It does not use AI or crawl all of Google; verify each notice and supplier-eligibility requirement.</b></div>' +
+      ' + RFP / tender / procurement / EOI / consultancy. Poor-fit exclusions: civil/building works, vehicles, catering, office supplies, computer/tablet-only supply and printing. <b>Searches include this organization’s saved capabilities, keywords, and target markets. The scheduled scan checks TED and UK Find a Tender and saves profile matches; it does not crawl all of Google. Verify every notice and eligibility requirement.</b></div>' +
       '<div class="source-grid">' + cards + "</div>" +
       '<p class="source-footnote">Source coverage and free/paid access can change. Direct links are starting points, not endorsements. Always check the buyer’s original notice, deadline, legal-entity eligibility, registration and all mandatory criteria. UNjobs is mainly a jobs index; only institutional consultancy rosters suitable for company participation belong in the bid pipeline.</p>';
   }
@@ -649,7 +865,7 @@
       var items = state.opportunities.filter(function (item) { return item.stage === stage[0]; });
       return '<div class="pipeline-col"><div class="pipeline-col-head">' + escapeHtml(stage[1]) + "<span>" + items.length + "</span></div>" +
         (items.length ? items.map(function (item) {
-          return '<article class="pipeline-card" data-open-opportunity="' + Number(item.id) + '"><b>' + escapeHtml(item.title) +
+          return '<article class="pipeline-card" data-open-opportunity="' + escapeHtml(item.id) + '"><b>' + escapeHtml(item.title) +
             '</b><small>' + escapeHtml(item.funder) + "</small><small>" + money(item.value, item.currency) + " · " + dateLabel(item.deadline) +
             "</small>" + fitMarkup(item.fit_score) + "</article>";
         }).join("") : '<div class="empty-state" style="padding:18px 5px"><p>Nothing here yet</p></div>') + "</div>";
@@ -665,22 +881,6 @@
     var s = stats();
     var won = state.opportunities.filter(function (item) { return item.stage === "Won"; });
     var lost = state.opportunities.filter(function (item) { return item.stage === "Lost"; });
-    var activity = (state.activity || []).length ? state.activity.map(function (item) {
-      var labels = {
-        opportunity: "Opportunity",
-        discovery: "Tender discovery",
-        proposal: "Proposal",
-        interview: "Interview preparation",
-        project: "Project launch",
-        milestone: "Delivery update",
-        company_profile: "Company evidence",
-        user: "Workspace access",
-      };
-      return '<div class="opp-row"><div><div class="opp-name">' + escapeHtml(labels[item.entity_type] || item.entity_type) +
-        " · " + escapeHtml(item.action.replace(/_/g, " ")) + '</div><div class="opp-meta">' +
-        escapeHtml(item.display_name || "Workspace user") + " · " + dateLabel(String(item.created_at || "").slice(0, 10)) +
-        '</div></div><div class="opp-right"><span class="pill">' + escapeHtml(item.entity_id ? "#" + item.entity_id : "System") + "</span></div></div>";
-    }).join("") : emptyState("No activity to report yet", "Important changes will appear here as your team qualifies bids, saves drafts and updates delivery.");
     var rows = state.opportunities.length ? state.opportunities.slice().sort(function (a, b) {
       return String(a.deadline || "9999").localeCompare(String(b.deadline || "9999"));
     }).map(function (item) {
@@ -690,6 +890,7 @@
     }).join("") : '<tr><td colspan="5">' + emptyState("No portfolio records yet", "Report data is calculated from your real opportunities only.") + "</td></tr>";
     document.getElementById("view-reports").innerHTML =
       pageHead("PORTFOLIO · EVIDENCE · MOMENTUM", "Portfolio report", "A clean management snapshot of real bid records and the latest team updates.",
+        (state.user && ["owner", "manager", "writer"].includes(state.user.role) ? '<button class="button" data-action="log-activity">＋ Log activity</button>' : "") +
         '<button class="button" data-action="export-csv">↓ Export CSV</button>' +
         (state.user && ["owner", "manager"].includes(state.user.role) ? '<button class="button" data-action="export-backup">↓ Download workspace backup</button>' : "") +
         '<button class="button button-primary" data-action="print-report">Print report</button>') +
@@ -704,15 +905,15 @@
       (s.winRate === null ? "—" : s.winRate + "%") + '</div><div class="stat-foot">' + won.length + " won · " + lost.length + " lost</div></article></div>" +
       '<div class="dashboard-grid"><article class="panel"><div class="panel-head"><div><h2 class="panel-title">Portfolio register</h2><p class="panel-sub">All captured opportunities · ordered by deadline</p></div></div>' +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>Opportunity / Buyer</th><th>Stage</th><th>Deadline</th><th>Value</th><th>Fit signal</th></tr></thead><tbody>' +
-      rows + "</tbody></table></div></article><article class=\"panel\"><div class=\"panel-head\"><div><h2 class=\"panel-title\">Latest team updates</h2><p class=\"panel-sub\">Recent audited actions in this workspace</p></div></div>" +
-      '<div class="opportunity-list">' + activity + "</div></article></div>";
+      rows + "</tbody></table></div></article><article class=\"panel\"><div class=\"panel-head\"><div><h2 class=\"panel-title\">Portfolio timeline</h2><p class=\"panel-sub\">Audited actions and manually recorded buyer communications</p></div></div>" +
+      '<div class="panel-body">' + activityTimeline(50) + "</div></article></div>";
   }
 
   function renderProposal() {
     var choices = state.opportunities.filter(function (item) { return item.stage !== "Lost" && item.stage !== "NoGo"; });
     var active = state.activeProposal;
     var current = active ? opportunityById(active) : null;
-    var generated = state.proposals.find(function (item) { return Number(item.opportunity_id) === Number(active); });
+    var generated = state.proposals.find(function (item) { return String(item.opportunity_id) === String(active); });
     var sections = state.proposalSections || [];
     var editor = sections.length ? sections.map(function (section, index) {
       return '<div class="proposal-section"><label for="proposal-' + index + '">' + escapeHtml(section.title) +
@@ -733,12 +934,12 @@
       ">" + (previewMode ? "Generate outline" : "Generate proposal draft") + "</button></div>" +
       '<div class="panel-pad">' + editor + "</div></article><aside class=\"panel proposal-sidebar\"><div class=\"panel-head\"><div><h2 class=\"panel-title\">Bid readiness</h2><p class=\"panel-sub\">A practical review, not a compliance verdict</p></div></div>" +
       '<div class="panel-body"><select id="proposalSelect" class="select"><option value="">Choose opportunity</option>' + choices.map(function (item) {
-        return '<option value="' + Number(item.id) + '"' + (Number(active) === Number(item.id) ? " selected" : "") + ">" + escapeHtml(item.title) + "</option>";
+        return '<option value="' + escapeHtml(item.id) + '"' + (String(active) === String(item.id) ? " selected" : "") + ">" + escapeHtml(item.title) + "</option>";
       }).join("") + "</select>" + (current ? '<div class="score-ring" style="--score:' + Number(current.fit_score || 0) + '%"><b>' +
         Number(current.fit_score || 0) + "</b></div><div style=\"text-align:center;font-size:9px;color:#8591a4;margin-top:-5px\">Capability screening signal</div>" +
         '<div class="signal-card"><span class="signal-label"><i></i> WHAT TO VERIFY</span><p style="margin-top:7px">' +
         escapeHtml((current.fit_json && current.fit_json.basis) || "Keyword screening only.") + "</p></div>" +
-        '<button class="button button-wide" data-action="prepare-interview" data-id="' + Number(current.id) + '">Prepare interview →</button>' : "") +
+        '<button class="button button-wide" data-action="prepare-interview" data-id="' + escapeHtml(current.id) + '">Prepare interview →</button>' : "") +
       (generated ? '<div class="form-field"><label for="proposalStatus">REVIEW STATUS</label><select id="proposalStatus" class="select"><option' +
         (generated.status === "Draft" ? " selected" : "") + '>Draft</option><option' + (generated.status === "In review" ? " selected" : "") +
         '>In review</option><option' + (generated.status === "Approved" ? " selected" : "") + '>Approved</option></select></div>' : "") +
@@ -763,12 +964,18 @@
       (current ? escapeHtml(current.title) + " · " + escapeHtml(current.funder) : "Choose the opportunity to prepare for") +
       '</p></div><select id="interviewSelect" class="select" style="max-width:260px"><option value="">Choose opportunity</option>' +
       state.opportunities.filter(function (item) { return item.stage !== "Lost" && item.stage !== "NoGo"; }).map(function (item) {
-        return '<option value="' + Number(item.id) + '"' + (Number(active) === Number(item.id) ? " selected" : "") + ">" + escapeHtml(item.title) + "</option>";
+        return '<option value="' + escapeHtml(item.id) + '"' + (String(active) === String(item.id) ? " selected" : "") + ">" + escapeHtml(item.title) + "</option>";
       }).join("") + '</select></div><div class="panel-pad">' + list + "</div></article>";
   }
 
   function renderDelivery() {
     var projects = state.projects || [];
+    if (!["premium", "enterprise"].includes(state.subscription && state.subscription.plan)) {
+      document.getElementById("view-delivery").innerHTML =
+        pageHead("PORTFOLIO DELIVERY", "Project launch", "Coordinate awarded work and milestone dates across a multi-project portfolio.") +
+        '<article class="panel panel-pad"><span class="eyebrow">PREMIUM WORKSPACE</span><h2 class="panel-title">Bring every project into one delivery view.</h2><p class="panel-sub">Upgrade to Premium or Enterprise to access project launch plans, chronological activity and Gantt scheduling.</p><button class="button button-primary" data-action="manage-plan">Compare plans →</button></article>';
+      return;
+    }
     var content = projects.length ? projects.map(function (project) {
       var complete = project.milestones.filter(function (item) { return item.status === "Done"; }).length;
       var pct = project.milestones.length ? Math.round(complete / project.milestones.length * 100) : 0;
@@ -776,13 +983,16 @@
         '</h3><p>' + escapeHtml(project.funder) + " · " + escapeHtml(project.project_manager || "Project manager to assign") + " · " +
         dateLabel(project.start_date) + '</p></div><div style="text-align:right">' + money(project.value, project.currency) +
         '<div class="fit-line" style="justify-content:flex-end">' + pct + "% launch controls complete</div></div></div>" +
+        renderProjectGantt(project) +
         '<div class="milestone-list">' + project.milestones.map(function (milestone) {
           return '<div class="milestone-row"><div><b>' + escapeHtml(milestone.title) + '</b><small>' +
-            (milestone.due_date ? dateLabel(milestone.due_date) : "Assign an owner and date during mobilisation") + '</small></div>' +
-            '<select class="select" data-milestone="' + Number(milestone.id) + '"><option' + (milestone.status === "Not started" ? " selected" : "") +
+            (milestone.due_date ? dateLabel(milestone.due_date) : "Set a due date to place this milestone on the Gantt chart") + '</small></div>' +
+            '<div class="milestone-controls"><input class="field milestone-date" type="date" aria-label="Due date for ' + escapeHtml(milestone.title) +
+            '" value="' + escapeHtml(milestone.due_date || "") + '" data-milestone-date="' + escapeHtml(milestone.id) + '">' +
+            '<select class="select" data-milestone="' + escapeHtml(milestone.id) + '"><option' + (milestone.status === "Not started" ? " selected" : "") +
             ">Not started</option><option" + (milestone.status === "In progress" ? " selected" : "") + ">In progress</option><option" +
             (milestone.status === "At risk" ? " selected" : "") + ">At risk</option><option" + (milestone.status === "Done" ? " selected" : "") +
-            ">Done</option></select></div>";
+            ">Done</option></select></div></div>";
         }).join("") + "</div></article>";
     }).join("") : emptyState("Build the launch, not just the bid", "After award is confirmed, mark the opportunity Won and create a launch plan. It seeds mobilisation, acceptance, risk, pilot, handover and early-outcome checkpoints.");
     document.getElementById("view-delivery").innerHTML =
@@ -792,28 +1002,91 @@
       content;
   }
 
+  function renderLearnings() {
+    var container = document.getElementById("view-learnings");
+    if (!container) return;
+    if (!state.subscription || state.subscription.plan !== "enterprise") {
+      container.innerHTML = pageHead("ENTERPRISE · HUMAN-REVIEWED LEARNINGS", "Learning review", "Turn verified bid and delivery feedback into a reusable, reviewable company knowledge base.") +
+        '<article class="panel panel-pad"><span class="eyebrow">ENTERPRISE</span><h2 class="panel-title">Learn from real outcomes, not guesses.</h2><p class="panel-sub">Enterprise uses AI to organize notes you provide into a draft learning. A manager reviews every draft before it becomes an approved company lesson.</p><button class="button button-primary" data-action="manage-plan">Compare plans →</button></article>';
+      return;
+    }
+    var canReview = state.user && ["owner", "manager"].includes(state.user.role);
+    var entries = (state.learnings || []).map(function (learning) {
+      var source = state.opportunities.find(function (item) { return String(item.id) === String(learning.source_opportunity_id); });
+      var controls = canReview && learning.status === "draft"
+        ? '<div class="page-actions"><button class="button button-primary" data-action="review-learning" data-id="' + escapeHtml(learning.id) + '" data-status="reviewed">Approve reviewed learning</button><button class="button" data-action="review-learning" data-id="' + escapeHtml(learning.id) + '" data-status="archived">Archive draft</button></div>'
+        : "";
+      return '<article class="panel learning-card"><div class="panel-head"><div><span class="pill ' + (learning.status === "reviewed" ? "green" : "") + '">' +
+        escapeHtml(learning.status) + '</span><h2 class="panel-title">' + escapeHtml(learning.title) + '</h2><p class="panel-sub">' +
+        escapeHtml(source ? source.title : "Company learning") + " · " + escapeHtml(dateLabel((learning.created_at || "").slice(0, 10))) +
+        '</p></div>' + controls + '</div><div class="panel-body"><p class="learning-copy">' + escapeHtml(learning.learning_text) + '</p>' +
+        (learning.status === "draft" ? '<div class="warning-note"><b>!</b><div>AI-generated draft. Verify all facts and approve it before anyone reuses it in a proposal or company process.</div></div>' : "") + '</div></article>';
+    }).join("") || emptyState("No lessons captured yet", "After a bid outcome or project milestone, record verified feedback to create a draft for review.");
+    var form = canReview
+      ? '<article class="panel panel-pad"><span class="eyebrow">CAPTURE VERIFIED TEAM FEEDBACK</span><h2 class="panel-title">Create a learning draft</h2><p class="panel-sub">AI receives the notes and selected opportunity below to organize a draft. Do not include personal, confidential or buyer-restricted data unless your organization has approved that use.</p><form id="learningForm"><div class="form-field"><label for="learningOpportunity">RELATED OPPORTUNITY (OPTIONAL)</label><select id="learningOpportunity" name="opportunity_id" class="select"><option value="">Company-wide learning</option>' +
+        state.opportunities.map(function (item) { return '<option value="' + escapeHtml(item.id) + '">' + escapeHtml(item.title) + '</option>'; }).join("") +
+        '</select></div><div class="form-field"><label for="learningNotes">FACTS, FEEDBACK AND EVIDENCE TO REVIEW *</label><textarea id="learningNotes" name="notes" class="textarea" required maxlength="5000" placeholder="What happened? What worked or did not? Include only facts your team can verify."></textarea></div><div id="learningFormError" class="form-error" role="alert"></div><button class="button button-primary" type="submit">Generate draft for human review →</button></form></article>'
+      : '<div class="callout"><strong>Manager review required.</strong> Ask your workspace owner or project manager to add or approve learning records.</div>';
+    container.innerHTML = pageHead("ENTERPRISE · EVIDENCE · IMPROVEMENT", "Learning review", "Build an organization-owned knowledge base from verified bid feedback and project outcomes.") +
+      '<div class="callout"><strong>Human approval stays in control.</strong> AI drafts are not approved automatically and are not written back into your company profile.</div>' + form + entries;
+  }
+
+  function renderProjectGantt(project) {
+    var dated = (project.milestones || []).filter(function (milestone) { return milestone.due_date; });
+    if (!project.start_date && !dated.length) {
+      return '<div class="gantt-empty">Add a project start date and milestone due dates to build a realistic schedule.</div>';
+    }
+    var points = (project.start_date ? [project.start_date] : []).concat(dated.map(function (milestone) { return milestone.due_date; }));
+    var dates = points.map(function (value) { return Date.parse(value + "T00:00:00Z"); }).filter(Number.isFinite);
+    if (!dates.length) return '<div class="gantt-empty">Add dates to build the delivery schedule.</div>';
+    var start = Math.min.apply(Math, dates);
+    var end = Math.max.apply(Math, dates);
+    var span = Math.max(86400000, end - start);
+    var rows = dated.map(function (milestone) {
+      var position = Math.max(0, Math.min(98, (Date.parse(milestone.due_date + "T00:00:00Z") - start) / span * 98));
+      var statusClass = milestone.status === "Done" ? "done" : milestone.status === "At risk" ? "risk" : milestone.status === "In progress" ? "progress" : "";
+      return '<div class="gantt-row"><span>' + escapeHtml(milestone.title) + '</span><div class="gantt-track"><i class="' + statusClass +
+        '" style="left:' + position + '%" title="' + escapeHtml(dateLabel(milestone.due_date)) + '"></i></div></div>';
+    }).join("");
+    return '<div class="gantt-wrap"><div class="gantt-head"><b>DELIVERY GANTT</b><span>' + escapeHtml(dateLabel(new Date(start).toISOString().slice(0, 10))) +
+      " → " + escapeHtml(dateLabel(new Date(end).toISOString().slice(0, 10))) + '</span></div>' + (rows || '<div class="gantt-empty">Set milestone due dates to map delivery checkpoints.</div>') + '</div>';
+  }
+
+  function profileFields(profile) {
+    function lines(key) { return Array.isArray(profile[key]) ? profile[key].join("\n") : ""; }
+    return '<div class="onboarding-grid"><div class="form-field"><label for="profileName">LEGAL / TRADING NAME *</label><input id="profileName" class="field" maxlength="160" required value="' + escapeHtml(profile.legal_name || "") + '"></div>' +
+      '<div class="form-field"><label for="profileWebsite">COMPANY WEBSITE</label><input id="profileWebsite" class="field" maxlength="240" type="url" placeholder="https://…" value="' + escapeHtml(profile.website || "") + '"></div>' +
+      '<div class="form-field onboarding-full"><label for="profilePitch">COMPANY SUMMARY</label><textarea id="profilePitch" class="textarea" maxlength="1200" placeholder="What your company delivers, for whom, and where">' + escapeHtml(profile.pitch || "") + '</textarea></div>' +
+      '<div class="form-field"><label for="profileCapabilities">CAPABILITIES · ONE PER LINE *</label><textarea id="profileCapabilities" class="textarea" required placeholder="Services and delivery strengths">' + escapeHtml(lines("capabilities")) + '</textarea></div>' +
+      '<div class="form-field"><label for="profileKeywords">SEARCH KEYWORDS · ONE PER LINE *</label><textarea id="profileKeywords" class="textarea" required placeholder="Terms buyers use in notices">' + escapeHtml(lines("preferred_keywords")) + '</textarea></div>' +
+      '<div class="form-field"><label for="profileSectors">TARGET SECTORS · ONE PER LINE</label><textarea id="profileSectors" class="textarea" placeholder="e.g. Education, public health, digital government">' + escapeHtml(lines("preferred_sectors")) + '</textarea></div>' +
+      '<div class="form-field"><label for="profilePreferredCountries">TARGET COUNTRIES / MARKETS · ONE PER LINE</label><textarea id="profilePreferredCountries" class="textarea" placeholder="Countries where you want to pursue work">' + escapeHtml(lines("preferred_countries")) + '</textarea></div>' +
+      '<div class="form-field"><label for="profileBuyerTypes">PREFERRED BUYER TYPES · ONE PER LINE</label><textarea id="profileBuyerTypes" class="textarea" placeholder="UN agencies, government, NGOs, development banks">' + escapeHtml(lines("preferred_buyer_types")) + '</textarea></div>' +
+      '<div class="form-field"><label for="profileCountries">VERIFIED OPERATING MARKETS · ONE PER LINE</label><textarea id="profileCountries" class="textarea" placeholder="Markets where your company can actually operate">' + escapeHtml(lines("operating_countries")) + '</textarea></div>' +
+      '<div class="form-field onboarding-full"><label for="profileCases">VERIFIED CASE STUDIES / OUTCOMES · ONE PER LINE</label><textarea id="profileCases" class="textarea" placeholder="Client-approved reference · scope · date · measured outcome">' + escapeHtml(lines("case_studies")) + '</textarea></div>' +
+      '<div class="form-field onboarding-full"><label for="profileCerts">CERTIFICATIONS / REGISTRATIONS · ONE PER LINE</label><textarea id="profileCerts" class="textarea" placeholder="Credential · issuer · expiry">' + escapeHtml(lines("certifications")) + '</textarea></div></div>';
+  }
+
+  function renderOnboarding() {
+    var onboarding = document.getElementById("view-onboarding");
+    if (!state.user || !["owner", "manager"].includes(state.user.role)) {
+      onboarding.innerHTML = '<article class="panel onboarding-card"><img src="assets/nexa-mark.svg" width="48" height="48" alt="NEXA"><span class="eyebrow">NEXA BIDOPS · WORKSPACE SETUP</span><h1>Company profile needed</h1><p class="onboarding-intro">Your organization needs a completed company profile before the opportunity radar can personalize search and match explanations. Contact your workspace owner or project manager to complete it.</p><div class="onboarding-note">This profile is shared by your organization. Personal sign-up is invitation-only, and employees do not create separate company profiles.</div><button class="button" data-action="logout">Sign out</button></article>';
+      return;
+    }
+    onboarding.innerHTML = '<article class="panel onboarding-card"><img src="assets/nexa-mark.svg" width="48" height="48" alt="NEXA"><span class="eyebrow">A PERSONALIZED WORKSPACE STARTS HERE</span><h1>Tell us what your company can win.</h1><p class="onboarding-intro">Set your verified capabilities and the opportunities you want to pursue. NEXA BidOps uses this shared company profile to shape search links, screen notices, and explain each profile-match score.</p><div class="onboarding-note">Your match score is a text-alignment signal only. It is not a legal eligibility check, compliance decision, or probability of winning. Verify every requirement against the buyer’s complete notice.</div><form id="companyProfileForm">' +
+      profileFields(state.profile || {}) +
+      '<p class="panel-sub">Only enter claims your company can verify. You can update these settings later in Company evidence.</p><div id="profileFormError" class="form-error" role="alert"></div><div class="onboarding-actions"><button class="button button-primary" type="submit">Save profile and open workspace →</button></div></form></article>';
+  }
+
   function renderProfile() {
     var profile = state.profile || {};
-    function lines(key) { return Array.isArray(profile[key]) ? profile[key].join("\n") : ""; }
     document.getElementById("view-profile").innerHTML =
-      pageHead("CAPABILITY · CREDENTIALS · PROOF", "Company evidence", "Keep the claims behind every bid current, specific and supportable.",
+      pageHead("CAPABILITY · CREDENTIALS · PROOF", "Company evidence", "This shared organization profile shapes discovery and match explanations.",
         state.user && (state.user.role === "owner" || state.user.role === "manager") ? '<button class="button button-primary" data-action="save-profile">Save company profile</button>' : "") +
-      '<div class="warning-note"><b>!</b><div><strong>Verify before external use.</strong> The starting capability profile comes from the attached prototype and has not been independently verified. Confirm company metrics, office locations, references and credentials before external use. Add evidence your team can actually submit.</div></div>' +
-      '<div class="profile-grid"><article class="panel panel-pad"><h2 class="panel-title" style="margin-bottom:15px">Positioning and capability</h2>' +
-      '<div class="profile-field"><label for="profileName">LEGAL / TRADING NAME</label><input id="profileName" class="field" maxlength="160" value="' + escapeHtml(profile.legal_name || "") + '"></div>' +
-      '<div class="profile-field"><label for="profileWebsite">VERIFIED WEBSITE</label><input id="profileWebsite" class="field" maxlength="240" placeholder="https://…" value="' + escapeHtml(profile.website || "") + '"></div>' +
-      '<div class="profile-field"><label for="profilePitch">COMPANY SUMMARY</label><textarea id="profilePitch" class="textarea" maxlength="1200">' + escapeHtml(profile.pitch || "") + '</textarea></div>' +
-      '<div class="profile-field"><label for="profileCountries">VERIFIED OPERATING MARKETS · ONE PER LINE</label><textarea id="profileCountries" class="textarea" placeholder="Country / market · verify before external use">' +
-      escapeHtml(lines("operating_countries")) + "</textarea></div>" +
-      '<div class="profile-field"><label for="profileCapabilities">CAPABILITIES · ONE PER LINE</label><textarea id="profileCapabilities" class="textarea" style="min-height:130px">' +
-      escapeHtml(lines("capabilities")) + "</textarea></div></article>" +
-      '<article class="panel panel-pad"><h2 class="panel-title" style="margin-bottom:5px">Proof that earns trust</h2><p class="panel-sub" style="margin-bottom:17px">Use only approved, traceable evidence. One item per line.</p>' +
-      '<div class="profile-field"><label for="profileCases">VERIFIED CASE STUDIES / OUTCOMES</label><textarea id="profileCases" class="textarea" style="min-height:120px" placeholder="Client-approved reference · scope · date · measured outcome">' +
-      escapeHtml(lines("case_studies")) + '</textarea></div>' +
-      '<div class="profile-field"><label for="profileCerts">CERTIFICATIONS / REGISTRATIONS</label><textarea id="profileCerts" class="textarea" style="min-height:85px" placeholder="Certificate / registration · issuer · expiry">' +
-      escapeHtml(lines("certifications")) + "</textarea></div>" +
+      '<div class="warning-note"><b>!</b><div><strong>Verify before external use.</strong> Search and match scores rely on the details entered here. Confirm company capabilities, market coverage, references, registrations and credentials before using them in a proposal.</div></div>' +
+      '<article class="panel panel-pad">' + profileFields(profile) +
       '<div class="signal-card"><span class="signal-label"><i></i> EVIDENCE RULE</span><h3>Claim → owner → source → approval</h3><p>Maintain that chain for each credential, metric, client reference, CV and financial figure used in a submission.</p></div>' +
-      '<p class="panel-sub">' + escapeHtml(profile.positioning_note || "Verify every claim before external use.") + "</p></article></div>";
+      '<p class="panel-sub">' + escapeHtml(profile.positioning_note || "Verify every claim before external use.") + "</p></article>";
   }
 
   function renderTeam() {
@@ -836,7 +1109,7 @@
         }).join("") + "</select>";
       var status = member.active ? '<span class="team-status"><i></i>Active</span>' : '<span class="team-status inactive"><i></i>Inactive</span>';
       return "<tr><td><div class=\"team-person\"><span class=\"avatar\">" + escapeHtml((member.display_name || member.email || "?").slice(0, 1).toUpperCase()) +
-        "</span><div><b>" + escapeHtml(member.display_name || "AfroCloud team member") + '</b><div class="opp-meta">' + escapeHtml(member.email || "Email not recorded") +
+        "</span><div><b>" + escapeHtml(member.display_name || "Workspace member") + '</b><div class="opp-meta">' + escapeHtml(member.email || "Email not recorded") +
         "</div></div></div></td><td>" + roleControl + "</td><td>" + status + '</td><td>' +
         (member.role === "owner" || member.user_id === state.user.id || (state.user.role !== "owner" && member.role !== "writer") ? "—" :
           '<button class="button button-small" data-action="toggle-user" data-id="' + escapeHtml(member.user_id) + '" data-active="' + String(!member.active) + '">' +
@@ -859,22 +1132,30 @@
   }
 
   function render() {
+    var onboardingRequired = !state.profile || state.profile.onboarding_complete !== true;
+    document.getElementById("appShell").classList.toggle("onboarding", onboardingRequired);
+    if (onboardingRequired) {
+      renderOnboarding();
+    } else {
+      document.getElementById("view-onboarding").innerHTML = "";
+      renderDashboard();
+      renderOpportunities();
+      renderPipeline();
+      renderReports();
+      renderProposal();
+      renderInterview();
+      renderDelivery();
+      renderLearnings();
+      renderProfile();
+      renderTeam();
+      document.querySelectorAll(".view").forEach(function (element) {
+        element.classList.toggle("active", element.id === "view-" + state.tab);
+      });
+      document.querySelectorAll(".nav-item").forEach(function (element) {
+        element.classList.toggle("active", element.dataset.nav === state.tab);
+      });
+    }
     document.getElementById("navOppCount").textContent = String(state.opportunities.length);
-    renderDashboard();
-    renderOpportunities();
-    renderPipeline();
-    renderReports();
-    renderProposal();
-    renderInterview();
-    renderDelivery();
-    renderProfile();
-    renderTeam();
-    document.querySelectorAll(".view").forEach(function (element) {
-      element.classList.toggle("active", element.id === "view-" + state.tab);
-    });
-    document.querySelectorAll(".nav-item").forEach(function (element) {
-      element.classList.toggle("active", element.dataset.nav === state.tab);
-    });
     document.getElementById("crumb").textContent = pageNames[state.tab] || pageNames.dashboard;
     document.getElementById("userName").textContent = state.user.display_name || state.user.username;
     document.getElementById("userRole").textContent = state.user.role;
@@ -891,17 +1172,114 @@
       state.csrf = data.csrf;
       state.user = data.user;
       state.profile = data.profile;
+      state.subscription = data.subscription || null;
       state.opportunities = data.opportunities || [];
       state.projects = data.projects || [];
       state.proposals = data.proposals || [];
+      state.learnings = data.learnings || [];
       state.activity = data.activity || [];
       state.latestDiscovery = data.latest_discovery || null;
+      if (state.subscription && !["active", "trialing"].includes(state.subscription.status)) {
+        openPlanScreen("Your seven-day trial has ended. Choose a subscription plan to restore workspace access.");
+        return;
+      }
       document.getElementById("loginScreen").hidden = true;
       document.getElementById("appShell").hidden = false;
       var teamRequest = state.user && ["owner", "manager"].includes(state.user.role)
         ? request("users").then(function (members) { state.users = members.users || []; })
         : Promise.resolve();
       return teamRequest.then(function () { render(); });
+    });
+  }
+
+  function authView(view) {
+    document.getElementById("loginForm").hidden = view !== "login";
+    document.getElementById("signupForm").hidden = view !== "signup";
+    document.getElementById("planScreen").hidden = view !== "plans";
+  }
+
+  function openPlanScreen(message) {
+    document.getElementById("appShell").hidden = true;
+    document.getElementById("loginScreen").hidden = false;
+    authView("plans");
+    document.getElementById("planMessage").textContent = message || "";
+    var trialAvailable = state.subscription && state.subscription.status === "trialing";
+    document.querySelectorAll(".plan-trial").forEach(function (button) { button.hidden = !trialAvailable; });
+  }
+
+  function startPlanTrial(plan, button) {
+    var message = document.getElementById("planMessage");
+    message.textContent = "";
+    if (!previewMode && !window.sessionStorage.getItem("afc_access_token")) {
+      message.textContent = "Confirm your email and sign in before choosing a plan.";
+      return;
+    }
+    setBusy(button, true, "Saving plan…");
+    request("subscription", { method: "PATCH", body: { plan: plan } }).then(function (result) {
+      state.subscription = result.subscription;
+      if (previewMode) {
+        return loadWorkspace().then(function () { notify("Preview plan updated."); });
+      }
+      if (!window.sessionStorage.getItem("afc_access_token")) {
+        message.textContent = "Your seven-day trial is running. Confirm your email, then sign in to continue.";
+        return;
+      }
+      return loadWorkspace().then(function () { notify("Your seven-day trial is ready."); });
+    }).catch(function (error) {
+      message.textContent = error.message;
+    }).finally(function () { setBusy(button, false); });
+  }
+
+  function startCheckout(provider, plan, button) {
+    var message = document.getElementById("planMessage");
+    message.textContent = "";
+    if (previewMode) {
+      message.textContent = "Payment checkout is not available in the browser-only preview.";
+      return;
+    }
+    if (!window.sessionStorage.getItem("afc_access_token")) {
+      message.textContent = "Confirm your email and sign in before starting checkout.";
+      return;
+    }
+    setBusy(button, true, "Opening secure checkout…");
+    var payload = { provider: provider, plan: plan };
+    if (provider === "mpesa") payload.phone = document.getElementById("mpesaPhone").value;
+    request("checkout", { method: "POST", body: payload }).then(function (result) {
+      if (result.checkout_url) {
+        window.location.assign(result.checkout_url);
+        return;
+      }
+      message.textContent = result.message || "Approve the M-Pesa prompt on your phone. NEXA will activate your account after payment confirmation.";
+      if (provider === "mpesa") {
+        setBusy(button, false);
+        var attempts = 0;
+        var oldSubscription = state.subscription || {};
+        var timer = window.setInterval(function () {
+          attempts += 1;
+          request("subscription").then(function (status) {
+            var current = status.subscription;
+            var renewed = current && current.status === "active" &&
+              (oldSubscription.status !== "active" ||
+                Date.parse(current.current_period_end || "") > Date.parse(oldSubscription.current_period_end || ""));
+            if (renewed) {
+              window.clearInterval(timer);
+              state.subscription = current;
+              loadWorkspace().then(function () { notify("Payment confirmed. Your account is active."); })
+                .catch(function (error) { notify(error.message, true); });
+            }
+          }).catch(function (error) {
+            window.clearInterval(timer);
+            message.textContent = error.message;
+          });
+          if (attempts >= 30) {
+            window.clearInterval(timer);
+            message.textContent = "Payment confirmation is still pending. Refresh your workspace in a moment or contact support if you were charged.";
+          }
+        }, 5000);
+      }
+    }).catch(function (error) {
+      message.textContent = error.message;
+      setBusy(button, false);
     });
   }
 
@@ -917,15 +1295,21 @@
     state.csrf = "";
     state.user = { id: "preview-owner", username: "preview", display_name: "Interactive Preview", role: "owner" };
     state.profile = {
-      legal_name: "AfroCloud Technologies · Preview",
+      legal_name: "",
       website: "",
-      pitch: "Demonstration profile only. Replace with company-approved positioning.",
-      capabilities: ["Digital learning content", "Microlearning and performance support", "Cloud services and cybersecurity", "Programme delivery and PMO"],
+      pitch: "",
+      capabilities: [],
       operating_countries: [],
+      preferred_countries: [],
+      preferred_sectors: [],
+      preferred_keywords: [],
+      preferred_buyer_types: [],
       case_studies: [],
       certifications: [],
+      onboarding_complete: false,
       positioning_note: "Preview workspace. No company claims, references or credentials have been verified.",
     };
+    state.subscription = { plan: "enterprise", status: "trialing", trial_started_at: new Date().toISOString(), trial_ends_at: days(7) + "T23:59:59.000Z" };
     state.opportunities = [
       { id: 1, title: "Mobile learning package for community health teams", funder: "UN health programme · buyer", funder_type: "UN agency", sector: "Health & learning", country: "Kenya", currency: "USD", value: 85000, deadline: days(6), stage: "GoNoGo", requirements: "scope: design 18 mobile-first learning modules, scenario-based assessments and a SCORM package for an existing LMS. Localise selected content into two languages. Mandatory checks: country eligibility, safeguarding approach, two comparable references, named instructional-design lead and signed declarations.", owner: "Amina · Bid lead", notes: "deadline/value; no live notice or buyer relationship. Next: confirm local partner eligibility and evidence for two references.", fit_score: 82, fit_json: { matched: ["Digital learning content", "Microlearning", "SCORM"], review: ["Verify translation capacity and safeguarding evidence."], basis: "keyword screen only. Confirm mandatory eligibility and evidence manually." } },
       { id: 2, title: "LMS migration and administrator enablement", funder: "regional development programme · buyer", funder_type: "Development bank", sector: "Digital learning", country: "Uganda", currency: "USD", value: 120000, deadline: days(18), stage: "Drafting", requirements: "scope: migrate 140 existing courses to a buyer-selected LMS, preserve learner records, run accessibility and QA checks, train 12 administrators and provide a 60-day hypercare plan. Evaluation emphasizes methodology, comparable migration evidence, team and total cost.", owner: "Daniel · Proposal lead", notes: "Draft needs an evidenced migration case study, named technical lead, assumptions and priced support period.", fit_score: 76, fit_json: { matched: ["LMS migration", "Administrator training", "Cloud services"], review: ["Verify access to the named platform and data-protection requirements."], basis: "keyword screen only. Confirm mandatory eligibility and evidence manually." } },
@@ -972,13 +1356,17 @@
       ] },
     ];
     state.activity = [
-      { action: "updated", entity_type: "milestone", entity_id: 3, display_name: "Grace · Project manager", created_at: new Date().toISOString() },
-      { action: "saved_draft", entity_type: "proposal", entity_id: 5, display_name: "Daniel · Proposal lead", created_at: new Date(Date.now() - 86400000).toISOString() },
-      { action: "go_no_go_review", entity_type: "opportunity", entity_id: 1, display_name: "Amina · Bid lead", created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
-      { action: "launch_plan", entity_type: "project", entity_id: 3, display_name: "Grace · Project manager", created_at: new Date(Date.now() - 5 * 86400000).toISOString() },
+      { action: "timeline_event", entity_type: "timeline", entity_id: 3, detail_json: { event_type: "confirmation_received", opportunity_id: 3, summary: "Buyer confirmed the project kick-off date.", contact: "Buyer programme lead", details: "Example only · confirm dates from the actual buyer." }, display_name: "Grace · Project manager", created_at: new Date(Date.now() - 45 * 60000).toISOString() },
+      { action: "timeline_event", entity_type: "timeline", entity_id: 3, detail_json: { event_type: "vendor_update_sent", opportunity_id: 3, summary: "Sent the vendor a mobilisation and onboarding update.", contact: "Delivery partner", details: "Example only · update shared owners and next steps." }, display_name: "Grace · Project manager", created_at: new Date(Date.now() - 3 * 3600000).toISOString() },
+      { action: "launch_plan", entity_type: "project", entity_id: 2, detail_json: { opportunity_id: 3 }, display_name: "Grace · Project manager", created_at: new Date(Date.now() - 7 * 3600000).toISOString() },
+      { action: "timeline_event", entity_type: "timeline", entity_id: 1, detail_json: { event_type: "email_response_received", opportunity_id: 1, summary: "Buyer requested clarification on the delivery approach.", contact: "Procurement contact", details: "Example only · record the actual question and response owner." }, display_name: "Amina · Bid lead", created_at: new Date(Date.now() - 30 * 3600000).toISOString() },
+      { action: "timeline_event", entity_type: "timeline", entity_id: 1, detail_json: { event_type: "email_sent", opportunity_id: 1, summary: "Submitted the bid and requested receipt confirmation.", contact: "Buyer procurement inbox", details: "Example only · store the submission receipt with the real bid." }, display_name: "Amina · Bid lead", created_at: new Date(Date.now() - 36 * 3600000).toISOString() },
+      { action: "generate", entity_type: "proposal", entity_id: 1, detail_json: { opportunity_id: 1 }, display_name: "Daniel · Proposal lead", created_at: new Date(Date.now() - 3 * 86400000).toISOString() },
+      { action: "stage_change", entity_type: "opportunity", entity_id: 1, detail_json: { from: "Discovered", to: "GoNoGo" }, display_name: "Amina · Bid lead", created_at: new Date(Date.now() - 4 * 86400000).toISOString() },
+      { action: "auto_discover", entity_type: "discovery", entity_id: "preview-run", display_name: "Daily public-source discovery", created_at: new Date(Date.now() - 5 * 86400000).toISOString() },
     ];
     state.users = [
-      { user_id: "preview-owner", email: "ceo@example.test", display_name: "AfroCloud CEO", role: "owner", active: true, created_at: new Date().toISOString() },
+      { user_id: "preview-owner", email: "ceo@example.test", display_name: "Workspace owner", role: "owner", active: true, created_at: new Date().toISOString() },
       { user_id: "preview-manager", email: "manager@example.test", display_name: "Grace · Project manager", role: "manager", active: true, created_at: new Date().toISOString() },
       { user_id: "preview-writer", email: "writer@example.test", display_name: "Daniel · Proposal lead", role: "writer", active: true, created_at: new Date().toISOString() },
       { user_id: "preview-inactive", email: "former.staff@example.test", display_name: "Inactive staff account", role: "writer", active: false, created_at: new Date().toISOString() },
@@ -996,13 +1384,41 @@
     return loadWorkspace();
   }
 
+  function handleBillingReturn() {
+    var billing = new URLSearchParams(window.location.search).get("billing");
+    if (!billing) return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    if (billing === "cancelled") {
+      notify("Checkout was cancelled. No subscription change was confirmed.");
+      return;
+    }
+    if (billing !== "success") return;
+    var attempts = 0;
+    var check = function () {
+      request("subscription").then(function (result) {
+        var current = result.subscription;
+        if (current && current.status === "active") {
+          state.subscription = current;
+          return loadWorkspace().then(function () { notify("Payment confirmed. Your account is active."); });
+        }
+        attempts += 1;
+        if (attempts >= 30) {
+          notify("Payment confirmation is still processing. Refresh in a moment or contact support if you were charged.");
+          return;
+        }
+        window.setTimeout(check, 3000);
+      }).catch(function (error) { notify(error.message, true); });
+    };
+    check();
+  }
+
   function signInRequired() {
     state.user = null;
     state.opportunities = [];
     state.users = [];
     document.getElementById("appShell").hidden = true;
     document.getElementById("loginScreen").hidden = false;
-    document.getElementById("previewButton").hidden = !previewMode;
+    authView("login");
   }
 
   function showSignIn(error) {
@@ -1010,7 +1426,7 @@
     document.getElementById("loginError").textContent = error || "";
     var form = document.getElementById("loginForm");
     if (form) form.reset();
-    document.getElementById("previewButton").hidden = !previewMode;
+    authView("login");
   }
 
   function setTab(tab) {
@@ -1064,18 +1480,21 @@
   function opportunityDetail(id) {
     var item = opportunityById(id);
     if (!item) return;
-    state.activeOpportunity = Number(id);
+    state.activeOpportunity = String(id);
     var fit = item.fit_json || {};
     var review = Array.isArray(fit.review) ? fit.review : [];
+    var matchDimensions = Array.isArray(fit.dimensions) ? fit.dimensions.map(function (dimension) {
+      return dimension.label + ": " + dimension.matched + "/" + dimension.total + " matched";
+    }).join(" · ") : "";
     var canManage = state.user && ["owner", "manager"].includes(state.user.role);
     var stageSelect = stageList.map(function (stage) {
       return '<option value="' + stage[0] + '"' + (item.stage === stage[0] ? " selected" : "") + ">" + escapeHtml(stage[1]) + "</option>";
     }).join("");
     var controls = canManage ? '<div class="form-field"><label for="detailStage">PIPELINE STAGE</label><select id="detailStage" class="select" data-stage-change="' +
-      Number(item.id) + '">' + stageSelect + '</select></div><div class="modal-actions" style="justify-content:flex-start;flex-wrap:wrap">' +
-      '<button class="button button-primary" data-action="use-proposal" data-id="' + Number(item.id) + '">Open proposal studio</button>' +
-      '<button class="button" data-action="use-interview" data-id="' + Number(item.id) + '">Interview prep</button>' +
-      (item.stage === "Won" ? '<button class="button" data-action="create-project" data-id="' + Number(item.id) + '">Create launch plan</button>' : "") + "</div>" : "";
+      escapeHtml(item.id) + '">' + stageSelect + '</select></div><div class="modal-actions" style="justify-content:flex-start;flex-wrap:wrap">' +
+      '<button class="button button-primary" data-action="use-proposal" data-id="' + escapeHtml(item.id) + '">Open proposal studio</button>' +
+      '<button class="button" data-action="use-interview" data-id="' + escapeHtml(item.id) + '">Interview prep</button>' +
+      (item.stage === "Won" ? '<button class="button" data-action="create-project" data-id="' + escapeHtml(item.id) + '">Create launch plan</button>' : "") + "</div>" : "";
     showModal('<span class="eyebrow">OPPORTUNITY · ' + escapeHtml(item.currency) + "</span><h2 id=\"modalTitle\">" + escapeHtml(item.title) +
       '</h2><p class="modal-intro">' + escapeHtml(item.funder) + " · " + escapeHtml(item.country || "Market to confirm") + "</p>" +
       '<dl class="details-list"><dt>Pipeline stage</dt><dd>' + stagePill(item.stage) + '</dd><dt>Deadline</dt><dd>' +
@@ -1084,15 +1503,16 @@
       '</dd><dt>Source</dt><dd>' + (item.source_url ? '<a href="' + escapeHtml(item.source_url) + '" target="_blank" rel="noopener noreferrer">' +
         escapeHtml(item.source_name || item.source_url) + ' ↗</a>' : escapeHtml(item.source_name || "Not recorded")) +
       '</dd><dt>Requirements</dt><dd>' + escapeHtml(item.requirements || "No scope captured yet.") + '</dd><dt>Fit signal</dt><dd>' +
-      Number(item.fit_score || 0) + "/100 · " + escapeHtml(fit.basis || "Screening signal only") + '</dd><dt>Matched capabilities</dt><dd>' +
-      escapeHtml((fit.matched || []).join(", ") || "No capability keywords matched") + '</dd><dt>Review flags</dt><dd>' +
-      escapeHtml(review.join(" ") || "No known flags from basic keyword screening. Manually check the full RFP.") +
+      Number(item.fit_score || 0) + "% profile match · " + escapeHtml(fit.basis || "Profile alignment only") +
+      (matchDimensions ? " (" + escapeHtml(matchDimensions) + ")" : "") + '</dd><dt>Why it matches</dt><dd>' +
+      escapeHtml((fit.matched || []).join(", ") || "No profile criteria matched in the captured notice text.") + '</dd><dt>Review flags</dt><dd>' +
+      escapeHtml(review.join(" ") || "Manually check the full notice and eligibility requirements.") +
       '</dd><dt>Notes</dt><dd>' + escapeHtml(item.notes || "No notes yet.") + "</dd></dl>" + controls);
   }
 
   function updateOpportunity(id, patch) {
     return request("opportunity", { method: "PATCH", id: id, body: patch }).then(function (data) {
-      var index = state.opportunities.findIndex(function (item) { return Number(item.id) === Number(id); });
+      var index = state.opportunities.findIndex(function (item) { return String(item.id) === String(id); });
       if (index >= 0) state.opportunities[index] = data.opportunity;
       render();
       return data.opportunity;
@@ -1101,14 +1521,14 @@
 
   function proposalAction(id) {
     if (!id) return;
-    state.activeProposal = Number(id);
+    state.activeProposal = String(id);
     state.proposalSections = [];
     request("proposal", { method: "GET", id: id }).then(function (data) {
       if (data.proposal) {
         state.proposalSections = data.proposal.sections_json || [];
-        state.proposals = state.proposals.filter(function (item) { return Number(item.opportunity_id) !== Number(id); });
+        state.proposals = state.proposals.filter(function (item) { return String(item.opportunity_id) !== String(id); });
         state.proposals.push({
-          opportunity_id: Number(id),
+          opportunity_id: String(id),
           status: data.proposal.status,
           updated_at: data.proposal.updated_at,
           opportunity_title: data.proposal.opportunity_title,
@@ -1127,7 +1547,7 @@
     request("proposal", { method: "POST", id: state.activeProposal, body: {} }).then(function (data) {
       state.proposalSections = data.sections || [];
       var item = opportunityById(state.activeProposal);
-      state.proposals = state.proposals.filter(function (proposal) { return Number(proposal.opportunity_id) !== Number(state.activeProposal); });
+      state.proposals = state.proposals.filter(function (proposal) { return String(proposal.opportunity_id) !== String(state.activeProposal); });
       state.proposals.push({ opportunity_id: state.activeProposal, status: "Draft", opportunity_title: item ? item.title : "" });
       render();
       notify(data.draft_mode === "ai"
@@ -1147,7 +1567,7 @@
     setBusy(button, true, "Saving…");
     request("proposal", { method: "POST", id: state.activeProposal, body: { sections: sections } }).then(function (data) {
       state.proposalSections = data.sections || sections;
-      state.proposals = state.proposals.filter(function (proposal) { return Number(proposal.opportunity_id) !== Number(state.activeProposal); });
+      state.proposals = state.proposals.filter(function (proposal) { return String(proposal.opportunity_id) !== String(state.activeProposal); });
       var item = opportunityById(state.activeProposal);
       state.proposals.push({ opportunity_id: state.activeProposal, status: "Draft", opportunity_title: item ? item.title : "" });
       render();
@@ -1160,7 +1580,7 @@
 
   function prepareInterview(id) {
     if (!id) return;
-    state.activeOpportunity = Number(id);
+    state.activeOpportunity = String(id);
     request("proposal", { method: "GET", id: id }).then(function (data) {
       if (data.proposal && data.proposal.interview_json) {
         state.interviewQuestions = data.proposal.interview_json;
@@ -1180,7 +1600,7 @@
     if (!item) return;
     showModal('<span class="eyebrow">AWARD CONFIRMED · MOBILISE WITH INTENT</span><h2 id="modalTitle">Create launch plan</h2>' +
       '<p class="modal-intro">' + escapeHtml(item.title) + " · " + escapeHtml(item.funder) + "</p>" +
-      '<form id="projectForm" data-id="' + Number(item.id) + '"><div class="form-field"><label for="projectManager">PROJECT MANAGER</label><input id="projectManager" name="project_manager" class="field" maxlength="120" value="' +
+      '<form id="projectForm" data-id="' + escapeHtml(item.id) + '"><div class="form-field"><label for="projectManager">PROJECT MANAGER</label><input id="projectManager" name="project_manager" class="field" maxlength="120" value="' +
       escapeHtml(state.user.display_name || "") + '"></div><div class="form-field"><label for="projectStart">PLANNED START DATE</label><input id="projectStart" name="start_date" class="field" type="date"></div>' +
       '<div class="callout"><strong>Launch controls included:</strong> mobilisation, acceptance baseline, delivery risk, pilot readiness, handover and a 30-day outcomes review. Dates and client owners remain for your team to confirm.</div>' +
       '<div class="modal-actions"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button button-primary" type="submit">Create launch plan →</button></div></form>');
@@ -1191,6 +1611,7 @@
   }
 
   function saveProfile(button) {
+    var onboarding = !state.profile || state.profile.onboarding_complete !== true;
     var url = document.getElementById("profileWebsite").value.trim();
     if (url && !/^https:\/\/[^ ]+$/i.test(url)) {
       notify("Use a full HTTPS URL for the company website.", true);
@@ -1205,14 +1626,21 @@
         pitch: document.getElementById("profilePitch").value,
         capabilities: linesFrom("profileCapabilities"),
         operating_countries: linesFrom("profileCountries"),
+        preferred_countries: linesFrom("profilePreferredCountries"),
+        preferred_sectors: linesFrom("profileSectors"),
+        preferred_keywords: linesFrom("profileKeywords"),
+        preferred_buyer_types: linesFrom("profileBuyerTypes"),
         case_studies: linesFrom("profileCases"),
         certifications: linesFrom("profileCerts"),
       },
     }).then(function (data) {
       state.profile = data.profile;
-      notify("Company evidence profile saved.");
+      if (onboarding) state.tab = "dashboard";
+      notify("Company profile saved. Opportunity matches now use your preferences.");
       render();
     }).catch(function (error) {
+      var formError = document.getElementById("profileFormError");
+      if (formError) formError.textContent = error.message;
       notify(error.message, true);
       setBusy(button, false);
     });
@@ -1228,9 +1656,9 @@
     });
     if (!item || !sections.length) return;
     var content = item.title + "\nPrepared for " + item.funder + "\nPrepared by " +
-      (state.profile.legal_name || "AfroCloud Technologies") + "\n\n" +
+      (state.profile.legal_name || "Your company") + "\n\n" +
       sections.map(function (section) { return section.title.toUpperCase() + "\n\n" + section.text; }).join("\n\n" + "-".repeat(48) + "\n\n");
-    downloadText("afrocloud-proposal-" + item.id + ".txt", content, "text/plain;charset=utf-8");
+    downloadText("nexa-bid-proposal-" + item.id + ".txt", content, "text/plain;charset=utf-8");
   }
 
   function exportCsv() {
@@ -1243,7 +1671,7 @@
     var rows = [header].concat(state.opportunities.map(function (item) {
       return [item.title, item.funder, item.sector, item.country, item.value, item.currency, item.deadline, item.stage, item.fit_score, item.owner, item.source_name, item.source_url];
     }));
-    downloadText("afrocloud-bid-pipeline.csv", rows.map(function (row) { return row.map(cell).join(","); }).join("\r\n"), "text/csv;charset=utf-8");
+    downloadText("nexa-bid-pipeline.csv", rows.map(function (row) { return row.map(cell).join(","); }).join("\r\n"), "text/csv;charset=utf-8");
   }
 
   function exportWorkspaceBackup(button) {
@@ -1252,7 +1680,7 @@
       var blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
       var anchor = document.createElement("a");
       anchor.href = URL.createObjectURL(blob);
-      anchor.download = "afrocloud-bidops-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      anchor.download = "nexa-bidops-backup-" + new Date().toISOString().slice(0, 10) + ".json";
       document.body.appendChild(anchor);
       anchor.click();
       window.setTimeout(function () { URL.revokeObjectURL(anchor.href); anchor.remove(); }, 500);
@@ -1293,8 +1721,19 @@
   }
 
   document.addEventListener("click", function (event) {
-    if (event.target.closest("#previewButton")) {
-      startPreview().catch(function (error) { notify(error.message, true); });
+    var authSwitch = event.target.closest("[data-auth-view]");
+    if (authSwitch) {
+      authView(authSwitch.dataset.authView);
+      return;
+    }
+    var checkout = event.target.closest("[data-checkout]");
+    if (checkout) {
+      startCheckout(checkout.dataset.checkout, checkout.dataset.plan, checkout);
+      return;
+    }
+    var trialButton = event.target.closest(".plan-trial");
+    if (trialButton) {
+      startPlanTrial(trialButton.dataset.plan, trialButton);
       return;
     }
     var nav = event.target.closest("[data-nav]");
@@ -1311,6 +1750,9 @@
     if (!action) return;
     var name = action.dataset.action;
     if (name === "new-opportunity") opportunityForm();
+    else if (name === "log-activity") activityForm();
+    else if (name === "support") supportForm();
+    else if (name === "manage-plan") openPlanScreen("");
     else if (name === "close-modal") closeModal();
     else if (name === "logout") logout();
     else if (name === "open-menu") {
@@ -1331,6 +1773,15 @@
     } else if (name === "generate-interview") prepareInterview(state.activeOpportunity);
     else if (name === "create-project") createProject(action.dataset.id);
     else if (name === "save-profile") saveProfile(action);
+    else if (name === "review-learning") {
+      request("learning", { method: "PATCH", id: action.dataset.id, body: { status: action.dataset.status } })
+        .then(function (result) {
+          var index = state.learnings.findIndex(function (item) { return String(item.id) === String(result.learning.id); });
+          if (index >= 0) state.learnings[index] = result.learning;
+          renderLearnings();
+          notify(result.learning.status === "reviewed" ? "Learning approved for reuse." : "Learning draft archived.");
+        }).catch(function (error) { notify(error.message, true); });
+    }
     else if (name === "export-csv") exportCsv();
     else if (name === "export-backup") exportWorkspaceBackup(action);
     else if (name === "print-report") window.print();
@@ -1340,7 +1791,79 @@
   });
 
   document.addEventListener("submit", function (event) {
-    if (event.target.id === "loginForm") {
+    if (event.target.id === "signupForm") {
+      event.preventDefault();
+      var signupForm = event.target;
+      var signupButton = signupForm.querySelector('button[type="submit"]');
+      var signupPayload = Object.fromEntries(new FormData(signupForm).entries());
+      signupPayload.marketing_consent = signupPayload.marketing_consent === "true";
+      document.getElementById("signupError").textContent = "";
+      setBusy(signupButton, true, "Creating secure workspace…");
+      request("signup", { method: "POST", body: signupPayload }).then(function (result) {
+        state.user = result.user;
+        state.subscription = result.subscription;
+        if (result.access_token) window.sessionStorage.setItem("afc_access_token", result.access_token);
+        if (result.refresh_token) window.sessionStorage.setItem("afc_refresh_token", result.refresh_token);
+        openPlanScreen(result.email_confirmation_required
+          ? "Your account and seven-day trial are saved. Confirm your email, then sign in to choose a plan and open your workspace."
+          : "Your seven-day trial has started. Choose the plan that fits your work; you can begin without paying.");
+      }).catch(function (error) {
+        document.getElementById("signupError").textContent = error.message;
+      }).finally(function () { setBusy(signupButton, false); });
+    } else if (event.target.id === "supportForm") {
+      event.preventDefault();
+      var supportFormElement = event.target;
+      var supportButton = supportFormElement.querySelector('button[type="submit"]');
+      var supportPayload = Object.fromEntries(new FormData(supportFormElement).entries());
+      supportPayload.marketing_consent = supportPayload.marketing_consent === "true";
+      var supportError = document.getElementById("supportError");
+      supportError.textContent = "";
+      setBusy(supportButton, true, "Sending securely…");
+      request("support", { method: "POST", body: supportPayload }).then(function (result) {
+        closeModal();
+        notify(result.message || "Your support request was sent.");
+      }).catch(function (error) {
+        supportError.textContent = error.message + " You can also email nexainnovates@gmail.com.";
+        setBusy(supportButton, false);
+      });
+    } else if (event.target.id === "learningForm") {
+      event.preventDefault();
+      var learningForm = event.target;
+      var learningButton = learningForm.querySelector('button[type="submit"]');
+      var learningPayload = Object.fromEntries(new FormData(learningForm).entries());
+      var learningError = document.getElementById("learningFormError");
+      learningError.textContent = "";
+      setBusy(learningButton, true, "Creating draft…");
+      request("learning", { method: "POST", body: learningPayload }).then(function (result) {
+        state.learnings.unshift(result.learning);
+        learningForm.reset();
+        renderLearnings();
+        notify("Learning draft saved. Review its evidence before approval.");
+      }).catch(function (error) {
+        learningError.textContent = error.message;
+        setBusy(learningButton, false);
+      });
+    } else if (event.target.id === "activityForm") {
+      event.preventDefault();
+      var activityFormElement = event.target;
+      var activityButton = activityFormElement.querySelector('button[type="submit"]');
+      var activityPayload = Object.fromEntries(new FormData(activityFormElement).entries());
+      var activityError = document.getElementById("activityFormError");
+      activityError.textContent = "";
+      setBusy(activityButton, true, "Saving activity…");
+      request("activity", { method: "POST", body: activityPayload }).then(function (result) {
+        state.activity.unshift(result.activity);
+        closeModal();
+        render();
+        notify("Activity added to the workspace timeline.");
+      }).catch(function (failure) {
+        activityError.textContent = failure.message;
+        setBusy(activityButton, false);
+      });
+    } else if (event.target.id === "companyProfileForm") {
+      event.preventDefault();
+      saveProfile(event.target.querySelector('button[type="submit"]'));
+    } else if (event.target.id === "loginForm") {
       event.preventDefault();
       var form = event.target;
       var error = document.getElementById("loginError");
@@ -1357,7 +1880,7 @@
         state.user = data.user;
         if (data.access_token) window.sessionStorage.setItem("afc_access_token", data.access_token);
         if (data.refresh_token) window.sessionStorage.setItem("afc_refresh_token", data.refresh_token);
-        return loadWorkspace();
+        return loadWorkspace().then(handleBillingReturn);
       }).catch(function (failure) {
         error.textContent = failure.message;
         setBusy(button, false);
@@ -1434,19 +1957,19 @@
         renderTeam();
       });
     } else if (target.id === "proposalSelect") {
-      state.activeProposal = target.value ? Number(target.value) : null;
+      state.activeProposal = target.value ? String(target.value) : null;
       state.proposalSections = [];
       if (state.activeProposal) proposalAction(state.activeProposal);
       else renderProposal();
     } else if (target.id === "interviewSelect") {
-      state.activeOpportunity = target.value ? Number(target.value) : null;
+      state.activeOpportunity = target.value ? String(target.value) : null;
       state.interviewQuestions = [];
       renderInterview();
     } else if (target.id === "proposalStatus") {
       if (!state.activeProposal) return;
       var proposalId = state.activeProposal;
       request("proposal", { method: "PATCH", id: proposalId, body: { status: target.value } }).then(function (data) {
-        var proposal = state.proposals.find(function (item) { return Number(item.opportunity_id) === Number(proposalId); });
+        var proposal = state.proposals.find(function (item) { return String(item.opportunity_id) === String(proposalId); });
         if (proposal) proposal.status = data.status;
         renderProposal();
         notify("Proposal review status updated.");
@@ -1470,6 +1993,14 @@
         target.value = previous;
         notify(error.message, true);
       });
+    } else if (target.dataset.milestoneDate) {
+      var dateMilestoneId = target.dataset.milestoneDate;
+      request("milestone", { method: "PATCH", id: dateMilestoneId, body: { due_date: target.value || null } }).then(function () {
+        return loadWorkspace().then(function () { setTab("delivery"); notify("Project schedule updated."); });
+      }).catch(function (error) {
+        notify(error.message, true);
+        loadWorkspace().then(function () { setTab("delivery"); });
+      });
     }
   });
 
@@ -1489,13 +2020,12 @@
   });
 
   if (previewMode) {
-    showSignIn("");
+    startPreview().catch(function (error) { notify(error.message, true); });
   } else {
     request("session").then(function (data) {
       if (data.mode === "preview") {
         previewMode = true;
-        showSignIn("");
-        return;
+        return startPreview();
       }
       state.csrf = data.csrf;
       state.user = data.user;
