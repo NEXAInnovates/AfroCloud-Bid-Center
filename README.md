@@ -70,7 +70,7 @@ Netlify CLI alternative: in this `netlify-deploy` directory, run `npx netlify-cl
 
 1. Create a Supabase project in an organization/account approved for your customers' data.
 2. In the Supabase SQL editor for that project, run [`supabase/setup.sql`](supabase/setup.sql).
-3. Configure Supabase **Authentication → URL Configuration** with the deployed HTTPS Netlify site URL and root as an allowed redirect URL. Set the desired email-confirmation and password policies, and configure production SMTP for account verification and team invitations.
+3. Configure Supabase **Authentication → URL Configuration** with the deployed HTTPS Netlify site URL (for example `https://nexa-bidops.netlify.app`) as the Site URL, and add `https://nexa-bidops.netlify.app/**` under Redirect URLs. Add each production/custom domain too. Keep email confirmations enabled and configure production SMTP. The signup API explicitly redirects confirmation links to the same site's root; the app consumes the confirmation token, returns users to plan selection, and offers a resend-confirmation action for expired/missing emails. Leave the Supabase **Confirm signup** template's `{{ .ConfirmationURL }}` link intact.
 4. In Netlify, set the following environment variables. Secrets belong only in the protected Functions runtime environment, never in `site`, browser code or a public ZIP:
 
    | Variable | Value |
@@ -95,7 +95,7 @@ Netlify CLI alternative: in this `netlify-deploy` directory, run `npx netlify-cl
 6. Configure Stripe to send signed `checkout.session.completed`, `customer.subscription.updated` and `customer.subscription.deleted` events to `https://YOUR-SITE/api/index.php?route=stripe-webhook`. Verify a test-mode transaction and webhook signature before enabling live checkout.
 7. Configure M-Pesa Daraja callbacks to the same site's `/api/index.php?route=mpesa-callback`; the app verifies callback amount and receipt and performs a server-to-server STK query before activation. Test in sandbox. M-Pesa renewals are customer-initiated, not recurring autopay.
 8. Configure Resend with a verified sender; otherwise support requests remain stored but cannot be emailed, and reminder messages are not delivered. Reminders use the scheduled `billing-maintenance` function, which also pauses expired subscriptions.
-9. Redeploy after setting variables. Customers create accounts themselves, confirm email if configured, select a plan, then complete company evidence onboarding. Their first seven trial days begin at registration.
+9. Redeploy after setting variables. Customers can register worldwide with a valid email and optional phone, confirm email, then select a free trial tier or begin card/M-Pesa checkout. A seven-day trial starts at registration; card checkout requires Stripe configuration and M-Pesa requires a Kenyan number.
 10. Owners can invite staff and project managers from **Team access**. Use **Portfolio report → Download workspace backup** to save a JSON backup; keep it secure.
 11. The `discover-tenders` scheduled function runs daily at 00:00 UTC (03:00 East Africa Time), querying TED and UK Find a Tender. It screens each completed company profile separately. It is not a whole-web crawler, and Google Search is a manual link, not an API feed.
 
@@ -130,6 +130,7 @@ Generate a rate-limit key with a trusted local password manager or a cryptograph
 - **`Could not be authorised` / missing BidOps access?** Confirm the auth email belongs to an active `bid_users` row and the role is `owner`, `manager` or `writer`.
 - **Database service unavailable?** Confirm the SQL setup completed, the Supabase URL/key pair belong to the same project, and the Netlify Functions environment contains the service-role key.
 - **Signup fails with a Supabase `400`?** Redeploy the latest source package to see the failing Supabase endpoint and its safe error detail in Function logs. If it reports that signups are disabled, enable **Authentication → Sign In / Providers → Email → Allow new users to sign up**. If the email already exists, sign in or reset its password. Check the Supabase Auth logs for the matching signup attempt.
+- **Confirmation email opens “Site not found” or the confirmation link expired?** Set the Supabase Site URL to the exact deployed Netlify/custom-domain origin and allow that same origin under **Authentication → URL Configuration → Redirect URLs** (for example `https://nexa-bidops.netlify.app/**`). Deploy the latest source and use **Resend confirmation email** on the sign-in form. The customer should then be returned to the NEXA plan chooser after confirming.
 - **“This account does not have NEXA BidOps access”?** Update/redeploy the latest source package and sign in again. If Supabase Auth recognizes the account but its NEXA workspace link is missing, the API now creates a private owner workspace and seven-day trial for that authenticated account. Existing inactive or invalid memberships are not reactivated by this recovery path.
 - **Preview does not work from a `file://` URL?** Deploy the `site` folder to Netlify; use its HTTPS preview URL. Alternatively try `?preview=1` while serving `site` locally over HTTP.
 

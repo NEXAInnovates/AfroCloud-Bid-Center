@@ -967,7 +967,8 @@ async function handle(request) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
     if (password.length < 10) throw new HttpError(400, 'Use a password with at least 10 characters.');
     const marketingConsent = input.marketing_consent === true;
-    const { data: authResult } = await supabase('/auth/v1/signup', {
+    const confirmationRedirect = new URL('/', url.origin).toString();
+    const { data: authResult } = await supabase(`/auth/v1/signup?redirect_to=${encodeURIComponent(confirmationRedirect)}`, {
       method: 'POST',
       body: { email, password, data: { display_name: displayName } },
     }, false);
@@ -1042,6 +1043,22 @@ async function handle(request) {
       access_token: authSession?.access_token,
       refresh_token: authSession?.refresh_token,
       expires_at: authSession?.expires_at,
+    });
+  }
+
+  if (route === 'resend-confirmation' && method === 'POST') {
+    await loginRateLimit(request);
+    const input = await parseBody(request);
+    const email = text(input.email, 254, 'email', true).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
+    const confirmationRedirect = new URL('/', url.origin).toString();
+    await supabase(`/auth/v1/resend?redirect_to=${encodeURIComponent(confirmationRedirect)}`, {
+      method: 'POST',
+      body: { type: 'signup', email },
+    }, false);
+    return json(200, {
+      ok: true,
+      message: 'If this address has an unconfirmed NEXA account, a fresh confirmation link has been sent.',
     });
   }
 

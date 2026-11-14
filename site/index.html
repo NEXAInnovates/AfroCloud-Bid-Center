@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b33">
   <title>BidOps Studio · NEXA</title>
+  <link rel="icon" type="image/svg+xml" href="assets/nexa-mark.svg">
   <link rel="stylesheet" href="assets/app.css">
   <script src="assets/app.js" defer></script>
 </head>
@@ -34,8 +35,9 @@
         <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="72">
         <button class="button button-primary button-wide" type="submit">Sign in <span aria-hidden="true">→</span></button>
         <div id="loginError" class="form-error" role="alert"></div>
+        <p id="confirmationActions" class="auth-support" hidden><button class="text-button" type="button" data-action="resend-confirmation">Resend confirmation email</button></p>
         <p class="auth-switch">Don't have an account? <button class="text-button" type="button" data-auth-view="signup">Create account</button></p>
-        <p class="auth-support"><button class="text-button" type="button" data-action="support">Contact support</button> · <a href="mailto:nexainnovates@gmail.com">Emergency email</a></p>
+        <p class="auth-support"><button class="text-button" type="button" data-action="support">Contact support</button></p>
       </form>
       <form id="signupForm" class="login-form" hidden>
         <span class="eyebrow">START YOUR PRIVATE WORKSPACE</span>
@@ -88,7 +90,6 @@
         <button class="text-button" type="button" data-auth-view="login">Back to sign in</button>
         <p class="auth-support"><button class="text-button" type="button" data-action="support">Questions? Contact support</button></p>
       </section>
-      <a class="admin-entry" href="platform-admin.html">NEXA platform administration</a>
     </div>
   </section>
 
@@ -117,7 +118,7 @@
       </nav>
       <div class="sidebar-bottom">
         <div class="help-card"><span class="help-spark">✦</span><b>Win with evidence.</b><p>Every strong bid starts with a clear fit and proof the team can stand behind.</p></div>
-        <div class="account-row"><div class="avatar" id="userAvatar">N</div><div class="account-name"><b id="userName">Workspace member</b><small id="userRole">Workspace member</small></div><button class="icon-button" data-action="logout" aria-label="Sign out">↗</button></div>
+        <div class="account-row"><div class="avatar" id="userAvatar" aria-label="NEXA">N</div><button class="icon-button" data-action="logout" aria-label="Sign out">↗</button></div>
       </div>
     </aside>
     <div id="scrim" class="scrim" data-action="close-menu"></div>

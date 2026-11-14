@@ -668,8 +668,7 @@
       '<div class="form-field"><label for="supportSubject">SUBJECT *</label><input id="supportSubject" class="field" name="subject" required maxlength="160" placeholder="How can we help?"></div>' +
       '<div class="form-field"><label for="supportMessage">MESSAGE *</label><textarea id="supportMessage" class="textarea" name="message" required maxlength="4000" placeholder="Include what you were trying to do and any error message."></textarea></div>' +
       '<label class="consent-option"><input name="marketing_consent" type="checkbox" value="true"> I would also like occasional product and service updates. Optional.</label>' +
-      '<div id="supportError" class="form-error" role="alert"></div><div class="modal-actions"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button button-primary" type="submit">Send to NEXA support →</button></div></form>' +
-      '<p class="auth-support">Emergency email: <a href="mailto:nexainnovates@gmail.com">nexainnovates@gmail.com</a></p>');
+      '<div id="supportError" class="form-error" role="alert"></div><div class="modal-actions"><button class="button" type="button" data-action="close-modal">Cancel</button><button class="button button-primary" type="submit">Send to NEXA support →</button></div></form>');
   }
 
   function renderDashboard() {
@@ -1157,9 +1156,6 @@
     }
     document.getElementById("navOppCount").textContent = String(state.opportunities.length);
     document.getElementById("crumb").textContent = pageNames[state.tab] || pageNames.dashboard;
-    document.getElementById("userName").textContent = state.user.display_name || state.user.username;
-    document.getElementById("userRole").textContent = state.user.role;
-    document.getElementById("userAvatar").textContent = (state.user.display_name || state.user.username || "A").slice(0, 1).toUpperCase();
     document.getElementById("today").textContent = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
     document.querySelector(".topbar [data-action='new-opportunity']").hidden =
       !state.user || !["owner", "manager"].includes(state.user.role);
@@ -1224,6 +1220,8 @@
         message.textContent = "Your seven-day trial is running. Confirm your email, then sign in to continue.";
         return;
       }
+      window.sessionStorage.removeItem("afc_pending_plan_selection");
+      window.localStorage.removeItem("afc_pending_signup_email");
       return loadWorkspace().then(function () { notify("Your seven-day trial is ready."); });
     }).catch(function (error) {
       message.textContent = error.message;
@@ -1245,6 +1243,8 @@
     var payload = { provider: provider, plan: plan };
     if (provider === "mpesa") payload.phone = document.getElementById("mpesaPhone").value;
     request("checkout", { method: "POST", body: payload }).then(function (result) {
+      window.sessionStorage.removeItem("afc_pending_plan_selection");
+      window.localStorage.removeItem("afc_pending_signup_email");
       if (result.checkout_url) {
         window.location.assign(result.checkout_url);
         return;
@@ -1410,6 +1410,46 @@
       }).catch(function (error) { notify(error.message, true); });
     };
     check();
+  }
+
+  function consumeSupabaseAuthRedirect() {
+    var params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    var queryParams = new URLSearchParams(window.location.search);
+    var error = params.get("error_description") || params.get("error") ||
+      queryParams.get("error_description") || queryParams.get("error");
+    if (error) {
+      window.history.replaceState(null, "", window.location.pathname);
+      return { error: "Email confirmation could not be completed. Request a fresh confirmation email and try again." };
+    }
+
+    var accessToken = params.get("access_token");
+    var refreshToken = params.get("refresh_token");
+    if (!accessToken) return { signupConfirmation: false };
+
+    window.sessionStorage.setItem("afc_access_token", accessToken);
+    if (refreshToken) window.sessionStorage.setItem("afc_refresh_token", refreshToken);
+    var expiresAtValue = params.get("expires_at");
+    var expiresAt = expiresAtValue ? Number(expiresAtValue) : NaN;
+    var expiresIn = params.get("expires_in");
+    if (!Number.isFinite(expiresAt) && expiresIn && Number.isFinite(Number(expiresIn))) {
+      expiresAt = Math.floor(Date.now() / 1000) + Number(expiresIn);
+    }
+    if (Number.isFinite(expiresAt)) window.sessionStorage.setItem("afc_token_expires_at", String(expiresAt));
+
+    var signupConfirmation = params.get("type") === "signup";
+    if (signupConfirmation) window.sessionStorage.setItem("afc_pending_plan_selection", "true");
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    return { signupConfirmation: signupConfirmation };
+  }
+
+  function resumePendingPlanSelection() {
+    if (window.sessionStorage.getItem("afc_pending_plan_selection") === "true" &&
+        state.subscription && state.subscription.status === "trialing") {
+      openPlanScreen("Email confirmed. Choose a package to start your seven-day trial, or subscribe now.");
+      window.localStorage.removeItem("afc_pending_signup_email");
+      return true;
+    }
+    return false;
   }
 
   function signInRequired() {
@@ -1721,6 +1761,22 @@
   }
 
   document.addEventListener("click", function (event) {
+    var resendConfirmation = event.target.closest("[data-action='resend-confirmation']");
+    if (resendConfirmation) {
+      var confirmationEmail = document.getElementById("username");
+      var confirmationMessage = document.getElementById("loginError");
+      confirmationMessage.textContent = "";
+      setBusy(resendConfirmation, true, "Sending…");
+      request("resend-confirmation", {
+        method: "POST",
+        body: { email: confirmationEmail.value.trim() || window.localStorage.getItem("afc_pending_signup_email") || "" },
+      }).then(function (result) {
+        confirmationMessage.textContent = result.message;
+      }).catch(function (error) {
+        confirmationMessage.textContent = error.message;
+      }).finally(function () { setBusy(resendConfirmation, false); });
+      return;
+    }
     var authSwitch = event.target.closest("[data-auth-view]");
     if (authSwitch) {
       authView(authSwitch.dataset.authView);
@@ -1798,15 +1854,22 @@
       var signupPayload = Object.fromEntries(new FormData(signupForm).entries());
       signupPayload.marketing_consent = signupPayload.marketing_consent === "true";
       document.getElementById("signupError").textContent = "";
+      window.localStorage.setItem("afc_pending_signup_email", signupPayload.email);
       setBusy(signupButton, true, "Creating secure workspace…");
       request("signup", { method: "POST", body: signupPayload }).then(function (result) {
         state.user = result.user;
         state.subscription = result.subscription;
         if (result.access_token) window.sessionStorage.setItem("afc_access_token", result.access_token);
         if (result.refresh_token) window.sessionStorage.setItem("afc_refresh_token", result.refresh_token);
-        openPlanScreen(result.email_confirmation_required
-          ? "Your account and seven-day trial are saved. Confirm your email, then sign in to choose a plan and open your workspace."
-          : "Your seven-day trial has started. Choose the plan that fits your work; you can begin without paying.");
+        if (result.email_confirmation_required) {
+          window.sessionStorage.setItem("afc_pending_plan_selection", "true");
+          showSignIn("Account created. Confirm your email using the link we sent, then sign in to choose a trial or paid plan.");
+          document.getElementById("username").value = signupPayload.email;
+          document.getElementById("confirmationActions").hidden = false;
+          return;
+        }
+        window.localStorage.removeItem("afc_pending_signup_email");
+        openPlanScreen("Your seven-day trial has started. Choose a package to continue, or subscribe now.");
       }).catch(function (error) {
         document.getElementById("signupError").textContent = error.message;
       }).finally(function () { setBusy(signupButton, false); });
@@ -1823,7 +1886,7 @@
         closeModal();
         notify(result.message || "Your support request was sent.");
       }).catch(function (error) {
-        supportError.textContent = error.message + " You can also email nexainnovates@gmail.com.";
+        supportError.textContent = error.message + " Please try again.";
         setBusy(supportButton, false);
       });
     } else if (event.target.id === "learningForm") {
@@ -1880,7 +1943,10 @@
         state.user = data.user;
         if (data.access_token) window.sessionStorage.setItem("afc_access_token", data.access_token);
         if (data.refresh_token) window.sessionStorage.setItem("afc_refresh_token", data.refresh_token);
-        return loadWorkspace().then(handleBillingReturn);
+        document.getElementById("confirmationActions").hidden = true;
+        return loadWorkspace().then(function () {
+          if (!resumePendingPlanSelection()) handleBillingReturn();
+        });
       }).catch(function (failure) {
         error.textContent = failure.message;
         setBusy(button, false);
@@ -2019,8 +2085,13 @@
     if (event.target.id === "modal") closeModal();
   });
 
+  var authRedirect = previewMode ? { signupConfirmation: false } : consumeSupabaseAuthRedirect();
   if (previewMode) {
     startPreview().catch(function (error) { notify(error.message, true); });
+  } else if (authRedirect.error) {
+    showSignIn(authRedirect.error);
+    document.getElementById("username").value = window.localStorage.getItem("afc_pending_signup_email") || "";
+    document.getElementById("confirmationActions").hidden = false;
   } else {
     request("session").then(function (data) {
       if (data.mode === "preview") {
@@ -2033,7 +2104,10 @@
         showSignIn("");
         return;
       }
-      return loadWorkspace();
+      return loadWorkspace().then(function () {
+        if (authRedirect.signupConfirmation) document.getElementById("confirmationActions").hidden = true;
+        if (!resumePendingPlanSelection()) handleBillingReturn();
+      });
     }).catch(function (error) {
       showSignIn("");
       document.getElementById("loginError").textContent = error.message + " Check the Netlify, HTTPS and database configuration.";
