@@ -518,10 +518,83 @@ function bearer(request) {
 async function userFromToken(token) {
   const { data: authUser } = await supabase('/auth/v1/user', { token }, false);
   if (!authUser || typeof authUser.id !== 'string') throw new HttpError(401, 'Please sign in again.');
-  const profiles = await select('bid_users',
+  let profiles = await select('bid_users',
     `select=user_id,organization_id,display_name,role,active&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`);
+  if (!profiles[0]) {
+    if (typeof authUser.email !== 'string' || !authUser.email) {
+      throw new HttpError(403, 'This sign-in has no email address. Contact NEXA support to link your workspace.');
+    }
+    const metadataName = authUser.user_metadata?.display_name;
+    const displayName = text(
+      typeof metadataName === 'string' && metadataName.trim()
+        ? metadataName
+        : authUser.email.split('@')[0],
+      120,
+      'account name',
+      true,
+    );
+    const createdOrganizations = await write('organizations', 'POST', '', {
+      name: `${displayName}'s workspace`,
+      created_by: authUser.id,
+    });
+    const organizationId = rows(createdOrganizations)[0]?.id;
+    if (!organizationId) throw new HttpError(503, 'Your sign-in is valid, but NEXA could not create your workspace. Please try again or contact support.');
+    let linked = false;
+    try {
+      await write('bid_users', 'POST', '', {
+        user_id: authUser.id,
+        organization_id: organizationId,
+        email: authUser.email.toLowerCase(),
+        display_name: displayName,
+        role: 'owner',
+        active: true,
+      }, 'return=minimal');
+      linked = true;
+      await write('organization_profiles', 'POST', '', {
+        organization_id: organizationId,
+        profile_json: {
+          ...PROFILE_DEFAULTS,
+          contact_name: displayName,
+        },
+      }, 'return=minimal');
+      await write('subscriptions', 'POST', '', {
+        organization_id: organizationId,
+        plan: 'pro',
+        status: 'trialing',
+      }, 'return=minimal');
+      await recordSubscriptionEvent(organizationId, 'trial_started', null, 'trialing', 'pro', null, {
+        trial_days: 7,
+        recovered_auth_account: true,
+      });
+      await audit(organizationId, authUser.id, 'account_access_repaired', 'organization', organizationId);
+      profiles = await select('bid_users',
+        `select=user_id,organization_id,display_name,role,active&user_id=eq.${encodeURIComponent(authUser.id)}&limit=1`);
+    } catch (error) {
+      if (linked) {
+        try {
+          await supabase(`/rest/v1/bid_users?user_id=eq.${encodeURIComponent(authUser.id)}&organization_id=eq.${encodeURIComponent(organizationId)}`, {
+            method: 'DELETE',
+            headers: { Prefer: 'return=minimal' },
+          });
+        } catch (cleanupError) {
+          console.error('NEXA could not remove an incomplete recovered account link.', cleanupError);
+        }
+      }
+      try {
+        await supabase(`/rest/v1/organizations?id=eq.${encodeURIComponent(organizationId)}`, {
+          method: 'DELETE',
+          headers: { Prefer: 'return=minimal' },
+        });
+      } catch (cleanupError) {
+        console.error('NEXA could not remove an incomplete recovered workspace.', cleanupError);
+      }
+      throw error;
+    }
+  }
   const profile = profiles[0];
-  if (!profile || !USERS.has(profile.role) || !profile.organization_id) throw new HttpError(403, 'This account does not have NEXA BidOps access.');
+  if (!profile || !USERS.has(profile.role) || !profile.organization_id) {
+    throw new HttpError(403, 'This account does not have a valid NEXA workspace membership. Contact NEXA support to link it.');
+  }
   if (!profile.active) throw new HttpError(403, 'This workspace account has been deactivated. Contact your workspace owner or NEXA support.');
   const organizations = await select('organizations',
     `select=id,active&id=eq.${encodeURIComponent(profile.organization_id)}&limit=1`);
