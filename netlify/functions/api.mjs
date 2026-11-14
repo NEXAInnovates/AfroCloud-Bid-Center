@@ -112,8 +112,32 @@ async function supabase(path, options = {}, privileged = true) {
     try { data = JSON.parse(raw); } catch { data = raw; }
   }
   if (!response.ok) {
-    console.error('BidOps Supabase request failed.', response.status,
-      typeof data === 'string' ? data.slice(0, 250) : data?.message || data?.error || data?.code);
+    const requestPath = path.split('?')[0];
+    const endpoint = requestPath === '/auth/v1/signup' ? 'Auth signup'
+      : requestPath.startsWith('/auth/v1/') ? 'Auth API'
+        : requestPath.startsWith('/rest/v1/rpc/') ? 'Database RPC'
+          : requestPath.startsWith('/rest/v1/') ? 'Database REST'
+            : 'Supabase API';
+    const upstreamMessage = typeof data === 'string' ? data
+      : [data?.message, data?.msg, data?.error_description, data?.error, data?.hint]
+        .find((value) => typeof value === 'string' && value.trim()) ||
+          (data?.code !== undefined ? `upstream code ${data.code}` : 'unknown Supabase error');
+    console.error('BidOps Supabase request failed.', response.status, endpoint,
+      String(upstreamMessage).slice(0, 250));
+    if (requestPath === '/auth/v1/signup' && response.status === 400) {
+      const message = String(upstreamMessage);
+      const normalizedMessage = message.toLowerCase();
+      if (/already registered|already exists|user_already_exists|email_exists/.test(normalizedMessage)) {
+        throw new HttpError(409, 'That email may already have an account. Sign in or use password reset.');
+      }
+      if (/sign.?ups? (are )?(disabled|not allowed)|email signups? disabled|signup_disabled/.test(normalizedMessage)) {
+        throw new HttpError(503, 'Supabase email registration is disabled. Enable email signups under Authentication → Sign In / Providers → Email, then redeploy.');
+      }
+      if (/password/.test(normalizedMessage)) {
+        throw new HttpError(400, 'Supabase rejected this password. Check its Auth password policy and choose a stronger password.');
+      }
+      throw new HttpError(400, `Supabase rejected account creation: ${message.slice(0, 180)}`);
+    }
     if (response.status === 401 || response.status === 403) {
       throw new HttpError(response.status, 'The account could not be authorised for this action.');
     }
